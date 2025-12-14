@@ -11,24 +11,32 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 
-// Types for our local chat history
+// Utility to generate IDs safely
+function generateId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `msg_${new Date().getTime()}_${Math.random().toString(36).slice(2)}`;
+}
+
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
   widgets?: Widget[];
-  isFormSubmitted?: boolean; // Track if user has submitted the widgets for this message
+  isFormSubmitted?: boolean;
 };
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+
+  // Shared state for the currently active widgets (both streaming and history)
   const [currentWidgetValues, setCurrentWidgetValues] = useState<
     Record<string, any>
   >({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Vercel AI SDK hook for structured object streaming
   const {
     submit,
     isLoading,
@@ -38,34 +46,38 @@ export default function ChatPage() {
     schema: ChatResponseSchema,
     onFinish: ({ object }) => {
       if (object) {
-        // When stream finishes, add the complete message to history
+        // Create the final message
         const newMessage: Message = {
-          id: Date.now().toString(),
+          id: generateId(),
           role: "assistant",
           content: object.message,
           widgets: object.widgets || [],
         };
         setMessages((prev) => [...prev, newMessage]);
-        setCurrentWidgetValues({}); // Reset form state for new widgets
+
+        // IMPORTANT: Do NOT clear currentWidgetValues here.
+        // This preserves any data the user typed while the widgets were streaming.
       }
     },
     onError: (err) => console.error(err),
   });
 
-  // Auto-scroll to bottom
+  // Auto-scroll logic
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, partialObject, isLoading]);
 
-  // Handle standard text submission
   const handleTextSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
+    // Clear previous widget state when starting a new conversation turn
+    setCurrentWidgetValues({});
+
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: generateId(),
       role: "user",
       content: input,
     };
@@ -74,22 +86,20 @@ export default function ChatPage() {
     setMessages(newHistory);
     setInput("");
 
-    // Submit complete history to API
     submit({
       messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
     });
   };
 
-  // Handle Widget Form Submission
   const handleWidgetSubmit = (messageId: string, widgets: Widget[]) => {
-    // 1. Mark the message's form as submitted so we can disable the UI
+    // 1. Mark form as submitted to lock the UI
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === messageId ? { ...msg, isFormSubmitted: true } : msg,
       ),
     );
 
-    // 2. Format the widget values into a readable string for the LLM
+    // 2. Format responses for the LLM
     const formattedResponses = widgets
       .map((w) => {
         const val = currentWidgetValues[w.key];
@@ -97,13 +107,13 @@ export default function ChatPage() {
       })
       .join("\n");
 
-    const userContent = `Here are my choices:\n${formattedResponses}`;
+    // 3. Clear widget state so it doesn't pollute the next turn
+    setCurrentWidgetValues({});
 
-    // 3. Add as a user message and submit
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: generateId(),
       role: "user",
-      content: userContent,
+      content: `Here are my choices:\n${formattedResponses}`,
     };
 
     const newHistory = [...messages, userMsg];
@@ -116,12 +126,10 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen w-full flex-col bg-slate-50 dark:bg-zinc-950">
-      {/* Header */}
       <header className="flex h-14 items-center border-b bg-white px-6 dark:bg-zinc-900">
         <h1 className="text-lg font-semibold">Generative UI Chat</h1>
       </header>
 
-      {/* Chat Area */}
       <ScrollArea className="flex-1 p-4">
         <div className="mx-auto max-w-3xl space-y-6 pb-12">
           {messages.length === 0 && !isLoading && (
@@ -131,7 +139,7 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Render History */}
+          {/* 1. History Messages */}
           {messages.map((msg) => (
             <div
               key={msg.id}
@@ -158,18 +166,20 @@ export default function ChatPage() {
               </Avatar>
 
               <div className={`flex flex-col max-w-[80%] gap-2`}>
-                {/* Text Content */}
-                <div
-                  className={`rounded-lg px-4 py-2 text-sm shadow-sm ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-white dark:bg-zinc-900 border"
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                </div>
+                {/* Text Bubble */}
+                {msg.content && (
+                  <div
+                    className={`rounded-lg px-4 py-2 text-sm shadow-sm ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-white dark:bg-zinc-900 border"
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                )}
 
-                {/* Widgets (Only for Assistant) */}
+                {/* Render Widgets (Assistant Only) */}
                 {msg.role === "assistant" &&
                   msg.widgets &&
                   msg.widgets.length > 0 && (
@@ -186,7 +196,7 @@ export default function ChatPage() {
                               msg.isFormSubmitted
                                 ? undefined
                                 : currentWidgetValues[widget.key]
-                            } // Simplify logic for read-only
+                            }
                             disabled={!!msg.isFormSubmitted || isLoading}
                             onChange={(val) =>
                               setCurrentWidgetValues((prev) => ({
@@ -219,7 +229,7 @@ export default function ChatPage() {
             </div>
           ))}
 
-          {/* Streaming Partial Response */}
+          {/* 2. Streaming Response */}
           {isLoading && (
             <div className="flex gap-3">
               <Avatar className="h-8 w-8">
@@ -227,7 +237,8 @@ export default function ChatPage() {
                   <Bot size={16} />
                 </AvatarFallback>
               </Avatar>
-              <div className="space-y-2 max-w-[80%]">
+              <div className="flex flex-col max-w-[80%] gap-2">
+                {/* Streaming Text */}
                 {partialObject?.message && (
                   <div className="rounded-lg border bg-white px-4 py-2 text-sm shadow-sm dark:bg-zinc-900">
                     <p className="whitespace-pre-wrap">
@@ -235,12 +246,34 @@ export default function ChatPage() {
                     </p>
                   </div>
                 )}
-                {/* Preview widgets while streaming (optional, usually safer to wait for finish) */}
-                {!partialObject?.message && (
-                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Generating
-                    interface...
-                  </div>
+
+                {/* Streaming Widgets - Appears instantly! */}
+                {partialObject?.widgets && partialObject.widgets.length > 0 && (
+                  <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
+                    <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 flex items-center gap-2">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Generating Interface...
+                    </div>
+                    <div className="space-y-6 p-4">
+                      {partialObject.widgets.map((widget, idx) =>
+                        // Only render if type is present to prevent layout shift from empty objects
+                        widget?.type && widget?.key ? (
+                          <WidgetRenderer
+                            // Use index as key during streaming to avoid remounts while LLM types the key string
+                            key={idx}
+                            widget={widget}
+                            value={currentWidgetValues[widget.key]}
+                            onChange={(val) =>
+                              setCurrentWidgetValues((prev) => ({
+                                ...prev,
+                                [widget.key]: val,
+                              }))
+                            }
+                          />
+                        ) : null,
+                      )}
+                    </div>
+                  </Card>
                 )}
               </div>
             </div>
@@ -249,7 +282,6 @@ export default function ChatPage() {
         </div>
       </ScrollArea>
 
-      {/* Input Footer */}
       <div className="p-4 bg-white dark:bg-zinc-900 border-t">
         <form
           onSubmit={handleTextSubmit}
