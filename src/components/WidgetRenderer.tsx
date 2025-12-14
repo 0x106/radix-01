@@ -29,6 +29,9 @@ export function WidgetRenderer({
   onChange,
   disabled,
 }: WidgetRendererProps) {
+  // Guard clause: If the widget object itself is malformed during stream, render nothing.
+  if (!widget || !widget.type) return null;
+
   switch (widget.type) {
     case "text_input":
       return (
@@ -118,6 +121,7 @@ export function WidgetRenderer({
             disabled={disabled}
           />
           <div className="flex justify-between text-xs text-muted-foreground">
+            {/* Safe access for optional labels object */}
             <span>{widget.labels?.left}</span>
             <span>{widget.labels?.right}</span>
           </div>
@@ -133,26 +137,32 @@ export function WidgetRenderer({
             onValueChange={onChange}
             disabled={disabled}
           >
-            {widget.options.map((opt) => (
-              <div key={opt.value} className="flex items-center space-x-2">
-                <RadioGroupItem
-                  value={opt.value}
-                  id={`${widget.key}-${opt.value}`}
-                />
-                <Label
-                  htmlFor={`${widget.key}-${opt.value}`}
-                  className="font-normal"
+            {/* SAFEGUARD: Use optional chaining (?.) and check for opt.value */}
+            {widget.options?.map((opt, idx) => {
+              if (!opt?.value) return null; // Skip partial options
+              return (
+                <div
+                  key={opt.value + idx}
+                  className="flex items-center space-x-2"
                 >
-                  {opt.label}
-                </Label>
-              </div>
-            ))}
+                  <RadioGroupItem
+                    value={opt.value}
+                    id={`${widget.key}-${opt.value}`}
+                  />
+                  <Label
+                    htmlFor={`${widget.key}-${opt.value}`}
+                    className="font-normal"
+                  >
+                    {opt.label}
+                  </Label>
+                </div>
+              );
+            })}
           </RadioGroup>
         </div>
       );
 
     case "checkbox_group":
-      // Value for checkbox group is an array of strings
       const currentValues = Array.isArray(value) ? value : [];
 
       const handleCheckedChange = (checked: boolean, itemValue: string) => {
@@ -167,24 +177,31 @@ export function WidgetRenderer({
         <div className="space-y-3">
           <Label>{widget.label}</Label>
           <div className="grid gap-2">
-            {widget.options.map((opt) => (
-              <div key={opt.value} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`${widget.key}-${opt.value}`}
-                  checked={currentValues.includes(opt.value)}
-                  onCheckedChange={(checked) =>
-                    handleCheckedChange(checked as boolean, opt.value)
-                  }
-                  disabled={disabled}
-                />
-                <Label
-                  htmlFor={`${widget.key}-${opt.value}`}
-                  className="font-normal cursor-pointer"
+            {/* SAFEGUARD: Use optional chaining */}
+            {widget.options?.map((opt, idx) => {
+              if (!opt?.value) return null;
+              return (
+                <div
+                  key={opt.value + idx}
+                  className="flex items-center space-x-2"
                 >
-                  {opt.label}
-                </Label>
-              </div>
-            ))}
+                  <Checkbox
+                    id={`${widget.key}-${opt.value}`}
+                    checked={currentValues.includes(opt.value)}
+                    onCheckedChange={(checked) =>
+                      handleCheckedChange(checked as boolean, opt.value)
+                    }
+                    disabled={disabled}
+                  />
+                  <Label
+                    htmlFor={`${widget.key}-${opt.value}`}
+                    className="font-normal cursor-pointer"
+                  >
+                    {opt.label}
+                  </Label>
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -204,21 +221,22 @@ export function WidgetRenderer({
               />
             </SelectTrigger>
             <SelectContent>
-              {widget.options.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
+              {/* SAFEGUARD: Use optional chaining */}
+              {widget.options?.map((opt, idx) => {
+                if (!opt?.value) return null;
+                return (
+                  <SelectItem key={opt.value + idx} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
       );
 
     default:
-      return (
-        <div className="text-red-500 text-sm">
-          Unsupported widget type: {(widget as any).type}
-        </div>
-      );
+      // Gracefully handle unknown or incomplete types during streaming
+      return null;
   }
 }
