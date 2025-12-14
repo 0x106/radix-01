@@ -76,68 +76,311 @@ export async function POST(req: Request) {
   return result.toTextStreamResponse();
 }
 // app/page.tsx
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useRef, useState } from "react";
+import { experimental_useObject as useObject } from "@ai-sdk/react";
+import { ChatResponseSchema, Widget } from "@/lib/schemas";
+import { Send, Bot, User, Loader2 } from "lucide-react";
+import { WidgetRenderer } from "@/components/WidgetRenderer";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card } from "@/components/ui/card";
+
+// Utility to generate IDs safely
+function generateId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `msg_${new Date().getTime()}_${Math.random().toString(36).slice(2)}`;
+}
+
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  widgets?: Widget[];
+  isFormSubmitted?: boolean;
+};
+
+export default function ChatPage() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+
+  // Shared state for the currently active widgets (both streaming and history)
+  const [currentWidgetValues, setCurrentWidgetValues] = useState<
+    Record<string, any>
+  >({});
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    submit,
+    isLoading,
+    object: partialObject,
+  } = useObject({
+    api: "/api/query",
+    schema: ChatResponseSchema,
+    onFinish: ({ object }) => {
+      if (object) {
+        // Create the final message
+        const newMessage: Message = {
+          id: generateId(),
+          role: "assistant",
+          content: object.message,
+          widgets: object.widgets || [],
+        };
+        setMessages((prev) => [...prev, newMessage]);
+
+        // IMPORTANT: Do NOT clear currentWidgetValues here.
+        // This preserves any data the user typed while the widgets were streaming.
+      }
+    },
+    onError: (err) => console.error(err),
+  });
+
+  // Auto-scroll logic
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, partialObject, isLoading]);
+
+  const handleTextSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    // Clear previous widget state when starting a new conversation turn
+    setCurrentWidgetValues({});
+
+    const userMsg: Message = {
+      id: generateId(),
+      role: "user",
+      content: input,
+    };
+
+    const newHistory = [...messages, userMsg];
+    setMessages(newHistory);
+    setInput("");
+
+    submit({
+      messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
+    });
+  };
+
+  const handleWidgetSubmit = (messageId: string, widgets: Widget[]) => {
+    // 1. Mark form as submitted to lock the UI
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId ? { ...msg, isFormSubmitted: true } : msg,
+      ),
+    );
+
+    // 2. Format responses for the LLM
+    const formattedResponses = widgets
+      .map((w) => {
+        const val = currentWidgetValues[w.key];
+        return `${w.label}: ${val !== undefined ? val : "(No answer)"}`;
+      })
+      .join("\n");
+
+    // 3. Clear widget state so it doesn't pollute the next turn
+    setCurrentWidgetValues({});
+
+    const userMsg: Message = {
+      id: generateId(),
+      role: "user",
+      content: `Here are my choices:\n${formattedResponses}`,
+    };
+
+    const newHistory = [...messages, userMsg];
+    setMessages(newHistory);
+
+    submit({
+      messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
+    });
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="flex h-screen w-full flex-col bg-slate-50 dark:bg-zinc-950">
+      <header className="flex h-14 items-center border-b bg-white px-6 dark:bg-zinc-900">
+        <h1 className="text-lg font-semibold">Generative UI Chat</h1>
+      </header>
+
+      <ScrollArea className="flex-1 p-4">
+        <div className="mx-auto max-w-3xl space-y-6 pb-12">
+          {messages.length === 0 && !isLoading && (
+            <div className="flex flex-col items-center justify-center pt-24 text-center text-muted-foreground">
+              <Bot className="mb-4 h-12 w-12 opacity-20" />
+              <p>Describe a task (e.g., "Help me design a character")</p>
+            </div>
+          )}
+
+          {/* 1. History Messages */}
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex gap-3 ${
+                msg.role === "user" ? "flex-row-reverse" : "flex-row"
+              }`}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              <Avatar className="h-8 w-8">
+                {msg.role === "assistant" ? (
+                  <>
+                    <AvatarImage src="/bot-avatar.png" />
+                    <AvatarFallback className="bg-blue-600 text-white">
+                      <Bot size={16} />
+                    </AvatarFallback>
+                  </>
+                ) : (
+                  <>
+                    <AvatarImage src="/user-avatar.png" />
+                    <AvatarFallback className="bg-zinc-800 text-white">
+                      <User size={16} />
+                    </AvatarFallback>
+                  </>
+                )}
+              </Avatar>
+
+              <div className={`flex flex-col max-w-[80%] gap-2`}>
+                {/* Text Bubble */}
+                {msg.content && (
+                  <div
+                    className={`rounded-lg px-4 py-2 text-sm shadow-sm ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-white dark:bg-zinc-900 border"
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                  </div>
+                )}
+
+                {/* Render Widgets (Assistant Only) */}
+                {msg.role === "assistant" &&
+                  msg.widgets &&
+                  msg.widgets.length > 0 && (
+                    <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
+                      <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                        Interactive Interface
+                      </div>
+                      <div className="space-y-6 p-4">
+                        {msg.widgets.map((widget) => (
+                          <WidgetRenderer
+                            key={widget.key}
+                            widget={widget}
+                            value={
+                              msg.isFormSubmitted
+                                ? undefined
+                                : currentWidgetValues[widget.key]
+                            }
+                            disabled={!!msg.isFormSubmitted || isLoading}
+                            onChange={(val) =>
+                              setCurrentWidgetValues((prev) => ({
+                                ...prev,
+                                [widget.key]: val,
+                              }))
+                            }
+                          />
+                        ))}
+                        {!msg.isFormSubmitted && (
+                          <Button
+                            className="w-full"
+                            onClick={() =>
+                              handleWidgetSubmit(msg.id, msg.widgets!)
+                            }
+                            disabled={isLoading}
+                          >
+                            Submit Responses
+                          </Button>
+                        )}
+                        {msg.isFormSubmitted && (
+                          <div className="text-center text-xs text-muted-foreground italic">
+                            Responses submitted
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  )}
+              </div>
+            </div>
+          ))}
+
+          {/* 2. Streaming Response */}
+          {isLoading && (
+            <div className="flex gap-3">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="bg-blue-600 text-white">
+                  <Bot size={16} />
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col max-w-[80%] gap-2">
+                {/* Streaming Text */}
+                {partialObject?.message && (
+                  <div className="rounded-lg border bg-white px-4 py-2 text-sm shadow-sm dark:bg-zinc-900">
+                    <p className="whitespace-pre-wrap">
+                      {partialObject.message}
+                    </p>
+                  </div>
+                )}
+
+                {/* Streaming Widgets - Appears instantly! */}
+                {partialObject?.widgets && partialObject.widgets.length > 0 && (
+                  <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
+                    <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 flex items-center gap-2">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Generating Interface...
+                    </div>
+                    <div className="space-y-6 p-4">
+                      {partialObject.widgets.map((widget, idx) =>
+                        // Only render if type is present to prevent layout shift from empty objects
+                        widget?.type && widget?.key ? (
+                          <WidgetRenderer
+                            // Use index as key during streaming to avoid remounts while LLM types the key string
+                            key={idx}
+                            widget={widget}
+                            value={currentWidgetValues[widget.key]}
+                            onChange={(val) =>
+                              setCurrentWidgetValues((prev) => ({
+                                ...prev,
+                                [widget.key]: val,
+                              }))
+                            }
+                          />
+                        ) : null,
+                      )}
+                    </div>
+                  </Card>
+                )}
+              </div>
+            </div>
+          )}
+          <div ref={scrollRef} />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+      </ScrollArea>
+
+      <div className="p-4 bg-white dark:bg-zinc-900 border-t">
+        <form
+          onSubmit={handleTextSubmit}
+          className="mx-auto flex max-w-3xl items-center gap-2"
+        >
+          <Input
+            placeholder="Send a message..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={isLoading}
+            className="flex-1"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            disabled={isLoading || !input.trim()}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+            <Send className="h-4 w-4" />
+          </Button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -183,6 +426,249 @@ const schema: AppSchema = _schema;
 
 export type { AppSchema };
 export default schema;
+// components/WidgetRenderer.tsx
+"use client";
+
+import { Widget } from "@/lib/schemas";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+interface WidgetRendererProps {
+  widget: Widget;
+  value: any;
+  onChange: (value: any) => void;
+  disabled?: boolean;
+}
+
+export function WidgetRenderer({
+  widget,
+  value,
+  onChange,
+  disabled,
+}: WidgetRendererProps) {
+  // Guard clause: If the widget object itself is malformed during stream, render nothing.
+  if (!widget || !widget.type) return null;
+
+  switch (widget.type) {
+    case "text_input":
+      return (
+        <div className="space-y-2">
+          <Label htmlFor={widget.key}>{widget.label}</Label>
+          <Input
+            id={widget.key}
+            placeholder={widget.placeholder}
+            value={value || ""}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+          />
+          {widget.description && (
+            <p className="text-xs text-muted-foreground">
+              {widget.description}
+            </p>
+          )}
+        </div>
+      );
+
+    case "number_input":
+      return (
+        <div className="space-y-2">
+          <Label htmlFor={widget.key}>{widget.label}</Label>
+          <Input
+            id={widget.key}
+            type="number"
+            min={widget.min}
+            max={widget.max}
+            value={value || ""}
+            onChange={(e) => onChange(Number(e.target.value))}
+            disabled={disabled}
+          />
+        </div>
+      );
+
+    case "textarea":
+      return (
+        <div className="space-y-2">
+          <Label htmlFor={widget.key}>{widget.label}</Label>
+          <Textarea
+            id={widget.key}
+            placeholder={widget.placeholder}
+            rows={widget.rows}
+            value={value || ""}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+          />
+        </div>
+      );
+
+    case "toggle":
+      return (
+        <div className="flex items-center justify-between rounded-lg border p-4">
+          <div className="space-y-0.5">
+            <Label htmlFor={widget.key}>{widget.label}</Label>
+            {widget.description && (
+              <p className="text-xs text-muted-foreground">
+                {widget.description}
+              </p>
+            )}
+          </div>
+          <Switch
+            id={widget.key}
+            checked={!!value}
+            onCheckedChange={onChange}
+            disabled={disabled}
+          />
+        </div>
+      );
+
+    case "slider":
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between">
+            <Label>{widget.label}</Label>
+            <span className="text-sm text-muted-foreground">
+              {value ?? widget.min}
+            </span>
+          </div>
+          <Slider
+            min={widget.min}
+            max={widget.max}
+            step={widget.step}
+            value={[value ?? widget.min]}
+            onValueChange={(vals) => onChange(vals[0])}
+            disabled={disabled}
+          />
+          <div className="flex justify-between text-xs text-muted-foreground">
+            {/* Safe access for optional labels object */}
+            <span>{widget.labels?.left}</span>
+            <span>{widget.labels?.right}</span>
+          </div>
+        </div>
+      );
+
+    case "radio_group":
+      return (
+        <div className="space-y-3">
+          <Label>{widget.label}</Label>
+          <RadioGroup
+            value={value || ""}
+            onValueChange={onChange}
+            disabled={disabled}
+          >
+            {/* SAFEGUARD: Use optional chaining (?.) and check for opt.value */}
+            {widget.options?.map((opt, idx) => {
+              if (!opt?.value) return null; // Skip partial options
+              return (
+                <div
+                  key={opt.value + idx}
+                  className="flex items-center space-x-2"
+                >
+                  <RadioGroupItem
+                    value={opt.value}
+                    id={`${widget.key}-${opt.value}`}
+                  />
+                  <Label
+                    htmlFor={`${widget.key}-${opt.value}`}
+                    className="font-normal"
+                  >
+                    {opt.label}
+                  </Label>
+                </div>
+              );
+            })}
+          </RadioGroup>
+        </div>
+      );
+
+    case "checkbox_group":
+      const currentValues = Array.isArray(value) ? value : [];
+
+      const handleCheckedChange = (checked: boolean, itemValue: string) => {
+        if (checked) {
+          onChange([...currentValues, itemValue]);
+        } else {
+          onChange(currentValues.filter((v: string) => v !== itemValue));
+        }
+      };
+
+      return (
+        <div className="space-y-3">
+          <Label>{widget.label}</Label>
+          <div className="grid gap-2">
+            {/* SAFEGUARD: Use optional chaining */}
+            {widget.options?.map((opt, idx) => {
+              if (!opt?.value) return null;
+              return (
+                <div
+                  key={opt.value + idx}
+                  className="flex items-center space-x-2"
+                >
+                  <Checkbox
+                    id={`${widget.key}-${opt.value}`}
+                    checked={currentValues.includes(opt.value)}
+                    onCheckedChange={(checked) =>
+                      handleCheckedChange(checked as boolean, opt.value)
+                    }
+                    disabled={disabled}
+                  />
+                  <Label
+                    htmlFor={`${widget.key}-${opt.value}`}
+                    className="font-normal cursor-pointer"
+                  >
+                    {opt.label}
+                  </Label>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+
+    case "select":
+      return (
+        <div className="space-y-2">
+          <Label>{widget.label}</Label>
+          <Select
+            value={value || ""}
+            onValueChange={onChange}
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={widget.placeholder || "Select option"}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {/* SAFEGUARD: Use optional chaining */}
+              {widget.options?.map((opt, idx) => {
+                if (!opt?.value) return null;
+                return (
+                  <SelectItem key={opt.value + idx} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      );
+
+    default:
+      // Gracefully handle unknown or incomplete types during streaming
+      return null;
+  }
+}
 // instant.perms.ts
 // Docs: https://www.instantdb.com/docs/permissions
 
@@ -209,27 +695,24 @@ const rules = {
 
 export default rules;
 // lib/schemas.ts
-// lib/schemas.ts
 import { z } from "zod";
 
 // --- Primitives ---
-
 const WidgetBase = z.object({
-  key: z
-    .string()
-    .describe(
-      "The variable name for the data (e.g., 'story_tone', 'user_age').",
-    ),
-  label: z.string().describe("The visible label for the input."),
-  description: z.string().optional().describe("Helper text or tooltip."),
+  key: z.string().describe("The variable name (e.g., 'user_age')."),
+  label: z.string().describe("The label for the input."),
+  description: z.string().optional(),
+});
+
+const OptionSchema = z.object({
+  label: z.string(),
+  value: z.string(),
 });
 
 // --- Widget Types ---
-
 export const TextInputSchema = WidgetBase.extend({
   type: z.literal("text_input"),
   placeholder: z.string().optional(),
-  defaultValue: z.string().optional(),
 });
 
 export const TextAreaSchema = WidgetBase.extend({
@@ -242,18 +725,11 @@ export const NumberInputSchema = WidgetBase.extend({
   type: z.literal("number_input"),
   min: z.number().optional(),
   max: z.number().optional(),
-  step: z.number().optional(),
 });
 
 export const BooleanToggleSchema = WidgetBase.extend({
   type: z.literal("toggle"),
   defaultChecked: z.boolean().default(false),
-});
-
-// Options for Select/Radio/Checkbox
-const OptionSchema = z.object({
-  label: z.string(),
-  value: z.string(),
 });
 
 export const SelectSchema = WidgetBase.extend({
@@ -277,14 +753,15 @@ export const SliderSchema = WidgetBase.extend({
   min: z.number().default(0),
   max: z.number().default(100),
   step: z.number().default(1),
-  labels: z.object({
-    left: z.string().optional(),
-    right: z.string().optional(),
-  }),
+  labels: z
+    .object({
+      left: z.string().optional(),
+      right: z.string().optional(),
+    })
+    .optional(),
 });
 
-// --- Unions & Response ---
-
+// --- Union ---
 export const WidgetSchema = z.discriminatedUnion("type", [
   TextInputSchema,
   TextAreaSchema,
@@ -297,24 +774,8 @@ export const WidgetSchema = z.discriminatedUnion("type", [
 ]);
 
 export const ChatResponseSchema = z.object({
-  // The conversational response
-  message: z
-    .string()
-    .describe("The textual response/instructions to the user."),
-
-  // The interactive interface
-  widgets: z
-    .array(WidgetSchema)
-    .optional()
-    .nullable()
-    .describe("A list of UI widgets to render."),
-
-  // Meta
-  title: z
-    .string()
-    .optional()
-    .describe("A title for the current step or interface."),
+  message: z.string(),
+  widgets: z.array(WidgetSchema).optional().nullable(),
 });
 
-export type ChatResponseType = z.infer<typeof ChatResponseSchema>;
 export type Widget = z.infer<typeof WidgetSchema>;
