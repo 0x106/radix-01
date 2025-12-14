@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
@@ -45,6 +46,22 @@ export function WidgetRenderer({
               {widget.description}
             </p>
           )}
+        </div>
+      );
+
+    case "number_input":
+      return (
+        <div className="space-y-2">
+          <Label htmlFor={widget.key}>{widget.label}</Label>
+          <Input
+            id={widget.key}
+            type="number"
+            min={widget.min}
+            max={widget.max}
+            value={value || ""}
+            onChange={(e) => onChange(Number(e.target.value))}
+            disabled={disabled}
+          />
         </div>
       );
 
@@ -134,6 +151,44 @@ export function WidgetRenderer({
         </div>
       );
 
+    case "checkbox_group":
+      // Value for checkbox group is an array of strings
+      const currentValues = Array.isArray(value) ? value : [];
+
+      const handleCheckedChange = (checked: boolean, itemValue: string) => {
+        if (checked) {
+          onChange([...currentValues, itemValue]);
+        } else {
+          onChange(currentValues.filter((v: string) => v !== itemValue));
+        }
+      };
+
+      return (
+        <div className="space-y-3">
+          <Label>{widget.label}</Label>
+          <div className="grid gap-2">
+            {widget.options.map((opt) => (
+              <div key={opt.value} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`${widget.key}-${opt.value}`}
+                  checked={currentValues.includes(opt.value)}
+                  onCheckedChange={(checked) =>
+                    handleCheckedChange(checked as boolean, opt.value)
+                  }
+                  disabled={disabled}
+                />
+                <Label
+                  htmlFor={`${widget.key}-${opt.value}`}
+                  className="font-normal cursor-pointer"
+                >
+                  {opt.label}
+                </Label>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+
     case "select":
       return (
         <div className="space-y-2">
@@ -160,6 +215,10 @@ export function WidgetRenderer({
       );
 
     default:
-      return null;
+      return (
+        <div className="text-red-500 text-sm">
+          Unsupported widget type: {(widget as any).type}
+        </div>
+      );
   }
 }
