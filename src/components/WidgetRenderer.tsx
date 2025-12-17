@@ -1,6 +1,5 @@
 "use client";
 
-import { Widget } from "@/lib/schemas";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,9 +15,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { Widget } from "@/lib/schemas"; // This now includes { response?: any }
+
 interface WidgetRendererProps {
   widget: Widget;
-  value: any;
+  value: any; // This will receive widget.response from the parent
   onChange: (value: any) => void;
   disabled?: boolean;
 }

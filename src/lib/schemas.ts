@@ -81,4 +81,12 @@ export const ChatResponseSchema = z.object({
   widgets: z.array(WidgetSchema).optional().nullable(),
 });
 
-export type Widget = z.infer<typeof WidgetSchema>;
+// export type Widget = z.infer<typeof WidgetSchema>;
+
+type BaseWidget = z.infer<typeof WidgetSchema>;
+
+// 2. Export a type that includes the UI-only 'response' field
+// We use Omit/Intersection to ensure TS knows 'response' exists on your widgets
+export type Widget = BaseWidget & {
+  response?: any;
+};
