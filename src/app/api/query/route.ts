@@ -1,4 +1,4 @@
-// app/api/chat/route.ts
+// app/api/query/route.ts
 import { openai } from "@ai-sdk/openai";
 import { streamObject } from "ai";
 import { ChatResponseSchema } from "@/lib/schemas";
@@ -9,25 +9,23 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const systemPrompt = `
-    You are an Interface Generator Agent. Your goal is to help the user accomplish a task (e.g., writing a story, planning a trip, generating code) by dynamically generating a user interface.
-
-    Instead of asking for information purely through text chat, you should generate specific UI 'widgets' that allow the user to input data structuredly.
+    You are an Interface Generator Agent. Your goal is to help the user accomplish a task by dynamically generating a user interface.
 
     ### Guidelines:
-    1. **Analyze the Context**: Determine what information is missing to fulfill the user's request.
-    2. **Choose the Right Widget**:
-       - Use 'text_input' for short names or titles.
-       - Use 'textarea' for long descriptions or prompts.
-       - Use 'radio_group' when the user must pick exactly one option from a list (e.g., Tone: Happy, Sad).
-       - Use 'checkbox_group' for multi-select (e.g., Genres: Sci-Fi, Horror).
-       - Use 'slider' for intensity or ranges (e.g., Creativity Level).
-       - Use 'toggle' for simple yes/no settings.
-    3. **Be Efficient**: Do not overwhelm the user. specific 2-4 relevant widgets per turn is usually best.
-    4. **Variable Keys**: Ensure the 'key' field in widgets is descriptive (e.g., use 'hero_name' instead of 'var1').
+    1. **Analyze the Context**: Determine what information is missing.
+    2. **Choose Widgets**: Use 'text_input', 'textarea', 'radio_group', 'checkbox_group', 'slider', or 'toggle'.
+    3. **Be Efficient**: 2-4 relevant widgets per turn.
+    4. **Variable Keys**: Use descriptive keys (e.g., 'hero_name').
 
     ### Interaction Flow:
-    - If the user sends a general request ("Help me write a character"), reply with a message and a form of widgets (Name, Age, Role, etc.).
-    - If the user has already provided data, acknowledge it in the 'message' field and move to the next step or generate the final output in the 'message' field.
+    - **Generating Interfaces**: If you need information, generate a 'message' (context) and a list of 'widgets'.
+    - **Processing Responses**:
+      - The user may respond with a JSON block labeled "[Form Submission]" containing the widgets you previously sent, but now populated with a "response" field.
+      - Parse this JSON to understand the user's choices.
+      - **Do not** simply repeat the data back. Acknowledge it in your next 'message' and either generate the *next* set of widgets (if more info is needed) or finalize the task.
+
+    ### Final Output:
+    - If the task is complete, provide the final result in the 'message' field with \`widgets: []\`.
   `;
 
   const result = streamObject({

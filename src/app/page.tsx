@@ -118,36 +118,31 @@ export default function ChatPage() {
   };
 
   const handleWidgetSubmit = (messageId: string, widgets: Widget[]) => {
-    console.log(widgets);
-
-    // 1. Mark form as submitted
+    // 1. Mark form as submitted to lock the UI
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === messageId ? { ...msg, isFormSubmitted: true } : msg,
       ),
     );
 
-    // 2. Format responses using the data stored INSIDE the widgets
-    const formattedResponses = widgets
-      .map((w) => {
-        // Read directly from w.response
-        const val = w.response;
-        return `${w.label}: ${val !== undefined && val !== "" ? val : "(No answer)"}`;
-      })
-      .join("\n");
+    // 2. Serialize the full widgets array (which now includes the 'response' field)
+    // We wrap it in a labeled block so the model clearly identifies it as data.
+    const payload = JSON.stringify(widgets, null, 2);
+    const content = `[Form Submission]\n\`\`\`json\n${payload}\n\`\`\``;
 
     const userMsg: Message = {
       id: generateId(),
       role: "user",
-      content: `Here are my choices:\n${formattedResponses}`,
+      content: content,
     };
 
+    // 3. Update history and submit
     const newHistory = [...messages, userMsg];
     setMessages(newHistory);
 
-    // submit({
-    //   messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
-    // });
+    submit({
+      messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
+    });
   };
 
   return (
