@@ -249,15 +249,15 @@ export default function ConversationPage({
   return (
     <div className="flex h-full w-full bg-white dark:bg-[#09090b]">
       {/* --- LEFT PANEL: CHAT --- */}
-      <div className="flex flex-col h-full w-[400px] border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 z-10">
-        <header className="h-14 flex items-center px-5 border-b border-slate-100 dark:border-zinc-900">
+      <div className="flex flex-col h-full w-100 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 z-10">
+        <header className="h-12 flex items-center px-5 border-b border-slate-100 dark:border-zinc-900">
           <h1 className="font-semibold text-sm tracking-tight text-slate-900 dark:text-slate-100">
             {conversation.title}
           </h1>
           <div className="ml-auto flex gap-2">
             <Badge
               variant="outline"
-              className="font-normal text-slate-500 rounded-[4px] border-slate-200"
+              className="font-normal text-slate-500 rounded-md border-slate-200"
             >
               v1.0
             </Badge>
@@ -351,34 +351,8 @@ export default function ConversationPage({
       </div>
 
       {/* --- RIGHT PANEL: PREVIEW --- */}
-      <div className="flex flex-col flex-1 h-full bg-[#f8f9fc] dark:bg-[#0c0c0c] bg-dot-pattern relative overflow-hidden">
-        <header className="h-14 flex items-center justify-between px-6 border-b border-slate-200/60 dark:border-zinc-800 bg-white/80 dark:bg-black/50 backdrop-blur-md sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <div className="bg-slate-100 dark:bg-zinc-800 p-1.5 rounded-md">
-              <Smartphone className="h-4 w-4 text-slate-500" />
-            </div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Preview Canvas
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="secondary"
-              className="bg-white border shadow-sm font-mono text-[10px]"
-            >
-              {containers.length} VIEWS
-            </Badge>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1.5 bg-white shadow-sm hover:bg-slate-50"
-            >
-              <Play size={10} className="fill-current" /> Run
-            </Button>
-          </div>
-        </header>
-
-        <div className="flex-1 p-8 overflow-hidden flex flex-col items-center">
+      <div className="flex flex-col flex-1 h-full bg-[#f8f9fc] dark:bg-[#0c0c0c] relative overflow-hidden">
+        <div className="flex-1 overflow-hidden flex flex-col items-center">
           {containers.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-slate-400">
               <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center mb-4">
@@ -389,19 +363,19 @@ export default function ConversationPage({
               </span>
             </div>
           ) : (
-            <div className="w-full max-w-2xl bg-white dark:bg-zinc-950 rounded-lg shadow-xl shadow-slate-200/50 dark:shadow-black border border-slate-200 dark:border-zinc-800 flex flex-col overflow-hidden max-h-full">
+            <div className="w-full  bg-white flex flex-col overflow-hidden h-full">
               <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
                 className="flex flex-col h-full"
               >
-                <div className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 px-2 pt-2">
-                  <TabsList className="bg-transparent h-auto p-0 gap-1 w-full justify-start">
+                <div className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 px-2 pt-2 h-12">
+                  <TabsList className="bg-transparent gap-1 w-full justify-start">
                     {containers.map((c) => (
                       <TabsTrigger
                         key={c.id}
                         value={c.id}
-                        className="px-4 py-2.5 rounded-t-md rounded-b-none border border-transparent data-[state=active]:bg-white data-[state=active]:border-slate-200 data-[state=active]:border-b-white data-[state=active]:shadow-sm text-xs font-medium text-slate-500 data-[state=active]:text-indigo-600 relative top-[1px]"
+                        className="px-4 py-2.5 rounded-t-md rounded-b-none border border-transparent data-[state=active]:bg-white data-[state=active]:border-slate-200 data-[state=active]:border-b-white data-[state=active]:shadow-sm text-xs font-medium text-slate-500 data-[state=active]:text-indigo-600 relative top-px"
                       >
                         {c.label}
                       </TabsTrigger>

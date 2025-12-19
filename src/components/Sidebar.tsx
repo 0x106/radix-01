@@ -45,7 +45,7 @@ export function Sidebar({ user }: { user: any }) {
   return (
     <div className="w-[260px] border-r border-slate-200 dark:border-zinc-800 bg-[#fbfbfb] dark:bg-[#0c0c0c] flex flex-col h-full shrink-0">
       {/* Brand / Header */}
-      <div className="h-14 flex items-center px-4 border-b border-slate-100 dark:border-zinc-800/50">
+      <div className="h-12 flex items-center px-4 border-b border-slate-100 dark:border-zinc-800/50">
         <div className="flex items-center gap-2 font-semibold text-sm tracking-tight">
           <div className="h-5 w-5 bg-indigo-600 rounded-[4px] flex items-center justify-center">
             <Command className="h-3 w-3 text-white" />
