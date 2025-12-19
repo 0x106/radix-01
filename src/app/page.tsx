@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/instant";
 import { id } from "@instantdb/react";
-import { Loader2 } from "lucide-react";
+import { Flower2, Loader2, Pizza } from "lucide-react";
 
 export default function HomePage() {
   const router = useRouter();
@@ -25,24 +25,15 @@ export default function HomePage() {
     if (data?.conversations && data.conversations.length > 0) {
       // Redirect to most recent conversation
       router.push(`/conversation/${data.conversations[0].id}`);
-    } else {
-      // Create new one if none exist
-      const newId = id();
-      db.transact(
-        db.tx.conversations[newId]
-          .update({
-            title: "New Conversation",
-            createdAt: Date.now(),
-          })
-          .link({ owner: user.id }),
-      );
-      router.push(`/conversation/${newId}`);
     }
   }, [isLoading, data, user, router]);
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    <div className="flex h-full items-center justify-center flex-col gap-10">
+      <Flower2 className="h-8 w-8" />
+      <span className="uppercase font-mono">
+        Create a new conversation to get started.
+      </span>
     </div>
   );
 }
