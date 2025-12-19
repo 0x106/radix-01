@@ -1,4 +1,3 @@
-// app/conversation/[id]/page.tsx
 "use client";
 
 import { useEffect, useRef, useState, use } from "react";
@@ -12,7 +11,13 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUp, Loader2, RefreshCw } from "lucide-react";
+import {
+  ArrowUp,
+  Loader2,
+  RefreshCw,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function ConversationPage({
@@ -21,6 +26,9 @@ export default function ConversationPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: conversationId } = use(params);
+
+  // --- STATE FOR LAYOUT ---
+  const [isChatOpen, setIsChatOpen] = useState(true);
 
   // --- INSTANTDB QUERY ---
   const { data, isLoading: isDbLoading } = db.useQuery({
@@ -87,7 +95,7 @@ export default function ConversationPage({
     onError: (err) => console.error("AI Error:", err),
   });
 
-  // Action Processor
+  // Action Processor (Same as before)
   const processAction = (
     action: WidgetAction,
     txs: any[],
@@ -263,36 +271,49 @@ export default function ConversationPage({
   if (!conversation) return <div className="p-10">Conversation not found</div>;
 
   return (
-    // MAIN CONTAINER: h-full with overflow-hidden ensures inner separate scrolling
     <div className="flex h-full w-full bg-white dark:bg-[#09090b] overflow-hidden">
       {/* --- LEFT PANEL: CHAT --- */}
-      {/* Fixed width (w-[400px]), shrink-0 so it doesn't collapse */}
-      <div className="flex flex-col h-full w-[400px] border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 z-10">
-        {/* Chat Header */}
-        <header className="h-12 flex items-center px-5 border-b border-slate-100 dark:border-zinc-900 shrink-0">
-          <h1 className="font-semibold text-sm tracking-tight text-slate-900 dark:text-slate-100 truncate">
-            {conversation.title}
-          </h1>
-          <div className="ml-auto flex gap-2">
+      {/* We conditionally hide it using 'hidden' class to preserve DOM state if needed, or just remove it.
+          'hidden' is safer for scroll positions if we un-hide later. */}
+      <div
+        className={cn(
+          "flex flex-col h-full border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 z-10 transition-all duration-300 ease-in-out",
+          isChatOpen
+            ? "w-[400px] opacity-100"
+            : "w-0 opacity-0 overflow-hidden border-none",
+        )}
+      >
+        <header className="h-12 flex items-center px-5 border-b border-slate-100 dark:border-zinc-900 shrink-0 justify-between">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <h1 className="font-semibold text-sm tracking-tight text-slate-900 dark:text-slate-100 truncate">
+              {conversation.title}
+            </h1>
             <Badge
               variant="outline"
-              className="font-normal text-slate-500 rounded-md border-slate-200"
+              className="font-normal text-slate-500 rounded-md border-slate-200 text-[10px] h-5 px-1.5"
             >
               v1.0
             </Badge>
           </div>
+
+          {/* Close Chat Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-slate-400 hover:text-slate-600"
+            onClick={() => setIsChatOpen(false)}
+            title="Collapse Chat"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </Button>
         </header>
 
-        {/* Chat Messages Area - flex-1 with min-h-0 allows ScrollArea to work properly */}
         <div className="flex-1 min-h-0 relative group">
           <ScrollArea className="h-full">
             <div className="px-5 py-6 space-y-8 pb-4">
               {messages.length === 0 && (
                 <div className="mt-10 text-center text-sm text-slate-400">
                   <p>Describe the interface you want to build.</p>
-                  <p className="text-xs mt-2 text-slate-300">
-                    "Create a table of users with edit actions"
-                  </p>
                 </div>
               )}
 
@@ -332,12 +353,6 @@ export default function ConversationPage({
                       </span>
                     )}
                   </div>
-                  {(partialObject?.actions?.length ?? 0) > 0 && (
-                    <div className="flex items-center gap-1.5 text-[10px] text-indigo-500 font-mono pl-1 mt-1">
-                      <RefreshCw className="h-3 w-3 animate-spin" />
-                      UPDATING INTERFACE STATE...
-                    </div>
-                  )}
                 </div>
               )}
               <div ref={scrollRef} />
@@ -345,7 +360,6 @@ export default function ConversationPage({
           </ScrollArea>
         </div>
 
-        {/* Chat Input - Fixed at bottom */}
         <div className="p-4 border-t border-slate-100 dark:border-zinc-900 bg-white/50 backdrop-blur-sm shrink-0">
           <div className="relative">
             <Input
@@ -374,10 +388,21 @@ export default function ConversationPage({
       </div>
 
       {/* --- RIGHT PANEL: PREVIEW --- */}
-      <div className="flex-1 flex flex-col h-full bg-[#f8f9fc] dark:bg-[#0c0c0c] relative min-w-0">
+      <div className="flex-1 flex flex-col h-full bg-[#f8f9fc] dark:bg-[#0c0c0c] relative min-w-0 transition-all duration-300">
         <div className="flex-1 overflow-hidden flex flex-col h-full">
           {containers.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-slate-400">
+              {/* Show Open Chat button if empty and closed */}
+              {!isChatOpen && (
+                <Button
+                  variant="outline"
+                  className="absolute top-4 left-4 gap-2 bg-white"
+                  onClick={() => setIsChatOpen(true)}
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                  Open Chat
+                </Button>
+              )}
               <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center mb-4">
                 <div className="h-8 w-8 rounded-sm border-2 border-dashed border-slate-300 dark:border-zinc-700" />
               </div>
@@ -392,9 +417,22 @@ export default function ConversationPage({
                 onValueChange={setActiveTab}
                 className="flex flex-col h-full w-full"
               >
-                {/* Tabs Header - Fixed */}
-                <div className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 px-2 pt-2 h-12 shrink-0">
-                  <TabsList className="bg-transparent gap-1 w-full justify-start">
+                {/* Tabs Header */}
+                <div className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 px-2 pt-2 h-12 shrink-0 flex items-center">
+                  {/* Expand Chat Button (Only visible when chat is closed) */}
+                  {!isChatOpen && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 mr-2 text-slate-500 hover:text-indigo-600 hover:bg-white shadow-sm"
+                      onClick={() => setIsChatOpen(true)}
+                      title="Open Chat"
+                    >
+                      <PanelLeftOpen className="h-4 w-4" />
+                    </Button>
+                  )}
+
+                  <TabsList className="bg-transparent gap-1 w-full justify-start h-auto p-0">
                     {containers.map((c) => (
                       <TabsTrigger
                         key={c.id}
@@ -407,8 +445,6 @@ export default function ConversationPage({
                   </TabsList>
                 </div>
 
-                {/* Content Area - Scrollable */}
-                {/* flex-1 and min-h-0 here ensures this div takes available space and scrolls internally */}
                 <div className="flex-1 min-h-0 bg-white dark:bg-zinc-950 relative">
                   <ScrollArea className="h-full">
                     {containers.map((container) => (
@@ -428,7 +464,7 @@ export default function ConversationPage({
                           )}
                         </div>
 
-                        <div className="grid gap-6 max-w-3xl">
+                        <div className="grid gap-6 max-w-4xl mx-auto">
                           {container.widgets.map((widget) => {
                             const widgetProps = (widget.props as object) || {};
                             const fullWidget = {
