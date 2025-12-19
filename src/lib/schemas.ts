@@ -5,9 +5,19 @@ const WidgetBase = z.object({
   key: z.string().describe("The unique ID/variable name."),
   containerId: z
     .string()
-    .describe("The ID of the container this widget belongs to."), // NEW
+    .describe("The ID of the container this widget belongs to."),
   label: z.string().describe("The label for the input."),
   description: z.string().optional(),
+
+  // NEW: The 'value' is now part of the schema definition.
+  // We use a union to cover strings, numbers, booleans (toggles), and arrays (checkboxes)
+  value: z
+    .union([z.string(), z.number(), z.boolean(), z.array(z.string())])
+    .optional()
+    .nullable()
+    .describe(
+      "The current value of the widget. Set this to pre-fill data or update the user's input.",
+    ),
 });
 
 const OptionSchema = z.object({
@@ -15,7 +25,7 @@ const OptionSchema = z.object({
   value: z.string(),
 });
 
-// --- Widget Types (Unchanged logic, just ensure they extend WidgetBase) ---
+// --- Widget Types ---
 export const TextInputSchema = WidgetBase.extend({
   type: z.literal("text_input"),
   placeholder: z.string().optional(),
@@ -60,10 +70,7 @@ export const SliderSchema = WidgetBase.extend({
   max: z.number().default(100),
   step: z.number().default(1),
   labels: z
-    .object({
-      left: z.string().optional(),
-      right: z.string().optional(),
-    })
+    .object({ left: z.string().optional(), right: z.string().optional() })
     .optional(),
 });
 
@@ -78,18 +85,13 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   SliderSchema,
 ]);
 
-// --- NEW: Container Schema ---
 export const ContainerSchema = z.object({
-  id: z
-    .string()
-    .describe("Unique ID for the container (e.g., 'personal_info')"),
-  label: z.string().describe("The display label for the tab"),
+  id: z.string(),
+  label: z.string(),
   description: z.string().optional(),
 });
 
-// --- Actions Schema ---
-// We now support actions for both Containers and Widgets
-
+// --- Actions ---
 export const ActionTypeSchema = z.enum([
   "ADD_CONTAINER",
   "UPDATE_CONTAINER",
@@ -101,18 +103,9 @@ export const ActionTypeSchema = z.enum([
 
 export const WidgetActionSchema = z.object({
   type: ActionTypeSchema,
-
-  // For Widget Actions
   widget: WidgetSchema.optional(),
-
-  // For Container Actions
   container: ContainerSchema.optional(),
-
-  // For DELETE actions (needs key or containerId)
-  targetId: z
-    .string()
-    .optional()
-    .describe(" The widget key or container ID to delete"),
+  targetId: z.string().optional(),
 });
 
 export const ChatResponseSchema = z.object({
@@ -120,10 +113,7 @@ export const ChatResponseSchema = z.object({
   actions: z.array(WidgetActionSchema).optional(),
 });
 
-type BaseWidget = z.infer<typeof WidgetSchema>;
-export type Widget = BaseWidget & {
-  response?: any;
-};
-
+// We no longer need the manual intersection type!
+export type Widget = z.infer<typeof WidgetSchema>;
 export type Container = z.infer<typeof ContainerSchema>;
 export type WidgetAction = z.infer<typeof WidgetActionSchema>;
