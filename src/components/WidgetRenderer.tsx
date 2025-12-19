@@ -14,12 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-import { Widget } from "@/lib/schemas"; // This now includes { response?: any }
+import { Widget } from "@/lib/schemas";
+import { cn } from "@/lib/utils";
 
 interface WidgetRendererProps {
   widget: Widget;
-  value: any; // This will receive widget.response from the parent
+  value: any;
   onChange: (value: any) => void;
   disabled?: boolean;
 }
@@ -30,33 +30,39 @@ export function WidgetRenderer({
   onChange,
   disabled,
 }: WidgetRendererProps) {
-  // Guard clause: If the widget object itself is malformed during stream, render nothing.
   if (!widget || !widget.type) return null;
+
+  const baseLabelStyle =
+    "text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 block";
+  const descStyle = "text-[0.8rem] text-slate-500 dark:text-slate-400 mt-1.5";
 
   switch (widget.type) {
     case "text_input":
       return (
-        <div className="space-y-2">
-          <Label htmlFor={widget.key}>{widget.label}</Label>
+        <div>
+          <Label htmlFor={widget.key} className={baseLabelStyle}>
+            {widget.label}
+          </Label>
           <Input
             id={widget.key}
             placeholder={widget.placeholder}
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             disabled={disabled}
+            className="h-9" // slightly smaller for modern feel
           />
           {widget.description && (
-            <p className="text-xs text-muted-foreground">
-              {widget.description}
-            </p>
+            <p className={descStyle}>{widget.description}</p>
           )}
         </div>
       );
 
     case "number_input":
       return (
-        <div className="space-y-2">
-          <Label htmlFor={widget.key}>{widget.label}</Label>
+        <div>
+          <Label htmlFor={widget.key} className={baseLabelStyle}>
+            {widget.label}
+          </Label>
           <Input
             id={widget.key}
             type="number"
@@ -65,14 +71,17 @@ export function WidgetRenderer({
             value={value || ""}
             onChange={(e) => onChange(Number(e.target.value))}
             disabled={disabled}
+            className="h-9 font-mono text-sm"
           />
         </div>
       );
 
     case "textarea":
       return (
-        <div className="space-y-2">
-          <Label htmlFor={widget.key}>{widget.label}</Label>
+        <div>
+          <Label htmlFor={widget.key} className={baseLabelStyle}>
+            {widget.label}
+          </Label>
           <Textarea
             id={widget.key}
             placeholder={widget.placeholder}
@@ -80,19 +89,23 @@ export function WidgetRenderer({
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             disabled={disabled}
+            className="resize-none min-h-[80px]"
           />
         </div>
       );
 
     case "toggle":
       return (
-        <div className="flex items-center justify-between rounded-lg border p-4">
+        <div className="flex items-center justify-between py-1">
           <div className="space-y-0.5">
-            <Label htmlFor={widget.key}>{widget.label}</Label>
+            <Label
+              htmlFor={widget.key}
+              className="text-sm font-medium text-slate-900 dark:text-slate-100"
+            >
+              {widget.label}
+            </Label>
             {widget.description && (
-              <p className="text-xs text-muted-foreground">
-                {widget.description}
-              </p>
+              <p className="text-xs text-slate-500">{widget.description}</p>
             )}
           </div>
           <Switch
@@ -106,10 +119,10 @@ export function WidgetRenderer({
 
     case "slider":
       return (
-        <div className="space-y-4">
-          <div className="flex justify-between">
-            <Label>{widget.label}</Label>
-            <span className="text-sm text-muted-foreground">
+        <div className="py-2">
+          <div className="flex justify-between mb-3 items-center">
+            <Label className={baseLabelStyle + " mb-0"}>{widget.label}</Label>
+            <span className="text-xs font-mono bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 rounded text-slate-600">
               {value ?? widget.min}
             </span>
           </div>
@@ -120,9 +133,9 @@ export function WidgetRenderer({
             value={[value ?? widget.min]}
             onValueChange={(vals) => onChange(vals[0])}
             disabled={disabled}
+            className="py-1"
           />
-          <div className="flex justify-between text-xs text-muted-foreground">
-            {/* Safe access for optional labels object */}
+          <div className="flex justify-between text-[10px] uppercase tracking-wider text-slate-400 mt-2">
             <span>{widget.labels?.left}</span>
             <span>{widget.labels?.right}</span>
           </div>
@@ -132,31 +145,41 @@ export function WidgetRenderer({
     case "radio_group":
       return (
         <div className="space-y-3">
-          <Label>{widget.label}</Label>
+          <Label className={baseLabelStyle}>{widget.label}</Label>
           <RadioGroup
             value={value || ""}
             onValueChange={onChange}
             disabled={disabled}
+            className="gap-2"
           >
-            {/* SAFEGUARD: Use optional chaining (?.) and check for opt.value */}
             {widget.options?.map((opt, idx) => {
-              if (!opt?.value) return null; // Skip partial options
+              if (!opt?.value) return null;
+              const isChecked = value === opt.value;
               return (
-                <div
+                <label
                   key={opt.value + idx}
-                  className="flex items-center space-x-2"
+                  htmlFor={`${widget.key}-${opt.value}`}
+                  className={cn(
+                    "flex items-center space-x-3 p-3 rounded-md border cursor-pointer transition-all",
+                    isChecked
+                      ? "border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600"
+                      : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
+                  )}
                 >
                   <RadioGroupItem
                     value={opt.value}
                     id={`${widget.key}-${opt.value}`}
+                    className="text-indigo-600"
                   />
-                  <Label
-                    htmlFor={`${widget.key}-${opt.value}`}
-                    className="font-normal"
+                  <span
+                    className={cn(
+                      "text-sm font-medium",
+                      isChecked ? "text-indigo-900" : "text-slate-700",
+                    )}
                   >
                     {opt.label}
-                  </Label>
-                </div>
+                  </span>
+                </label>
               );
             })}
           </RadioGroup>
@@ -165,20 +188,15 @@ export function WidgetRenderer({
 
     case "checkbox_group":
       const currentValues = Array.isArray(value) ? value : [];
-
       const handleCheckedChange = (checked: boolean, itemValue: string) => {
-        if (checked) {
-          onChange([...currentValues, itemValue]);
-        } else {
-          onChange(currentValues.filter((v: string) => v !== itemValue));
-        }
+        if (checked) onChange([...currentValues, itemValue]);
+        else onChange(currentValues.filter((v: string) => v !== itemValue));
       };
 
       return (
         <div className="space-y-3">
-          <Label>{widget.label}</Label>
+          <Label className={baseLabelStyle}>{widget.label}</Label>
           <div className="grid gap-2">
-            {/* SAFEGUARD: Use optional chaining */}
             {widget.options?.map((opt, idx) => {
               if (!opt?.value) return null;
               return (
@@ -196,7 +214,7 @@ export function WidgetRenderer({
                   />
                   <Label
                     htmlFor={`${widget.key}-${opt.value}`}
-                    className="font-normal cursor-pointer"
+                    className="font-normal text-sm cursor-pointer select-none"
                   >
                     {opt.label}
                   </Label>
@@ -209,20 +227,19 @@ export function WidgetRenderer({
 
     case "select":
       return (
-        <div className="space-y-2">
-          <Label>{widget.label}</Label>
+        <div>
+          <Label className={baseLabelStyle}>{widget.label}</Label>
           <Select
             value={value || ""}
             onValueChange={onChange}
             disabled={disabled}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-9">
               <SelectValue
                 placeholder={widget.placeholder || "Select option"}
               />
             </SelectTrigger>
             <SelectContent>
-              {/* SAFEGUARD: Use optional chaining */}
               {widget.options?.map((opt, idx) => {
                 if (!opt?.value) return null;
                 return (
@@ -237,7 +254,6 @@ export function WidgetRenderer({
       );
 
     default:
-      // Gracefully handle unknown or incomplete types during streaming
       return null;
   }
 }

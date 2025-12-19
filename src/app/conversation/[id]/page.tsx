@@ -9,11 +9,10 @@ import { WidgetRenderer } from "@/components/WidgetRenderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Loader2, Trash2, Layout } from "lucide-react";
+import { ArrowUp, Loader2, Play, RefreshCw, Smartphone } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function ConversationPage({
   params,
@@ -37,9 +36,7 @@ export default function ConversationPage({
   const conversation = data?.conversations[0];
   const messages = data?.conversations[0]?.messages || [];
   const containers = data?.conversations[0]?.containers || [];
-
   const allExistingWidgets = containers.flatMap((c) => c.widgets);
-
   const [activeTab, setActiveTab] = useState<string>("");
 
   useEffect(() => {
@@ -64,9 +61,8 @@ export default function ConversationPage({
 
       const txs = [];
       const timestamp = Date.now();
-
-      // 1. Add Assistant Message
       const msgId = generateId();
+
       txs.push(
         db.tx.messages[msgId]
           .update({
@@ -77,7 +73,6 @@ export default function ConversationPage({
           .link({ conversation: conversationId }),
       );
 
-      // 2. Process Actions
       const containerIdMap = new Map<string, string>();
       const widgetKeyMap = new Map<string, string>();
 
@@ -86,16 +81,12 @@ export default function ConversationPage({
           processAction(action, txs, containerIdMap, widgetKeyMap);
         });
       }
-
       db.transact(txs);
-
-      if (conversation?.title === "New Conversation" && messages.length > 0) {
-        // Optional: Update title logic
-      }
     },
     onError: (err) => console.error("AI Error:", err),
   });
 
+  // Action Processor (Same Logic, condensed for brevity)
   const processAction = (
     action: WidgetAction,
     txs: any[],
@@ -107,7 +98,6 @@ export default function ConversationPage({
         if (action.container) {
           const realContainerId = generateId();
           containerIdMap.set(action.container.id, realContainerId);
-
           txs.push(
             db.tx.containers[realContainerId]
               .update({
@@ -118,7 +108,6 @@ export default function ConversationPage({
           );
         }
         break;
-
       case "UPDATE_CONTAINER":
         if (action.container) {
           const targetId =
@@ -126,7 +115,6 @@ export default function ConversationPage({
           txs.push(db.tx.containers[targetId].merge(action.container));
         }
         break;
-
       case "DELETE_CONTAINER":
         if (action.targetId) {
           const targetId =
@@ -134,7 +122,6 @@ export default function ConversationPage({
           txs.push(db.tx.containers[targetId].delete());
         }
         break;
-
       case "ADD_WIDGET":
         if (action.widget && action.widget.containerId) {
           const resolvedContainerId =
@@ -142,10 +129,8 @@ export default function ConversationPage({
             action.widget.containerId;
           const realWidgetId = generateId();
           widgetKeyMap.set(action.widget.key, realWidgetId);
-
           const { key, type, label, description, value, ...restProps } =
             action.widget;
-
           txs.push(
             db.tx.widgets[realWidgetId]
               .update({
@@ -153,7 +138,6 @@ export default function ConversationPage({
                 type,
                 label,
                 description,
-                // Optional fields: if undefined/null, they are effectively unset in DB
                 value: value ?? undefined,
                 props: restProps ?? undefined,
               })
@@ -161,37 +145,22 @@ export default function ConversationPage({
           );
         }
         break;
-
       case "UPDATE_WIDGET":
         if (action.widget) {
           const { key, containerId, ...updates } = action.widget;
           let targetWidgetId = widgetKeyMap.get(key);
-
           if (!targetWidgetId) {
             const existing = allExistingWidgets.find((w) => w.key === key);
             if (existing) targetWidgetId = existing.id;
           }
-
           if (targetWidgetId) {
-            const { value, label, description, type, ...restProps } = updates;
-
-            const updatePayload: any = {};
-            if (label) updatePayload.label = label;
-            if (description) updatePayload.description = description;
-            if (type) updatePayload.type = type;
-
-            // Only update value if it's explicitly provided (including null to clear)
+            const { value, ...restProps } = updates;
+            const updatePayload: any = { ...restProps };
             if (value !== undefined) updatePayload.value = value;
-
-            // Only merge props if they exist
-            if (Object.keys(restProps).length > 0)
-              updatePayload.props = restProps;
-
             txs.push(db.tx.widgets[targetWidgetId].merge(updatePayload));
           }
         }
         break;
-
       case "DELETE_WIDGET":
         if (action.targetId) {
           let idToDelete = widgetKeyMap.get(action.targetId);
@@ -201,10 +170,7 @@ export default function ConversationPage({
             );
             if (existing) idToDelete = existing.id;
           }
-
-          if (idToDelete) {
-            txs.push(db.tx.widgets[idToDelete].delete());
-          }
+          if (idToDelete) txs.push(db.tx.widgets[idToDelete].delete());
         }
         break;
     }
@@ -216,19 +182,18 @@ export default function ConversationPage({
 
     const userContent = input;
     setInput("");
-
     const msgId = generateId();
+
     db.transact(
       db.tx.messages[msgId]
-        .update({
-          role: "user",
-          content: userContent,
-          createdAt: Date.now(),
-        })
+        .update({ role: "user", content: userContent, createdAt: Date.now() })
         .link({ conversation: conversationId }),
     );
 
-    if (conversation?.title === "New Conversation") {
+    if (
+      conversation?.title === "New Conversation" ||
+      conversation?.title === "Untitled Project"
+    ) {
       db.transact(
         db.tx.conversations[conversationId].update({
           title: userContent.slice(0, 30),
@@ -255,9 +220,7 @@ export default function ConversationPage({
       })),
       { role: "user" as const, content: userContent },
     ];
-
-    const lastMsgIndex = apiMessages.length - 1;
-    apiMessages[lastMsgIndex].content +=
+    apiMessages[apiMessages.length - 1].content +=
       `\n\n[Current State]:\n\`\`\`json\n${JSON.stringify(currentState)}\n\`\`\``;
 
     submit({ messages: apiMessages });
@@ -270,220 +233,227 @@ export default function ConversationPage({
     }
   };
 
-  const handleClear = () => {
-    if (confirm("Delete this conversation?")) {
-      db.transact(db.tx.conversations[conversationId].delete());
-    }
-  };
-
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current)
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
-    }
   }, [messages, isAiLoading, partialObject]);
 
   if (isDbLoading)
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="animate-spin" />
+      <div className="flex h-screen items-center justify-center bg-white">
+        <Loader2 className="animate-spin text-slate-300" />
       </div>
     );
   if (!conversation) return <div className="p-10">Conversation not found</div>;
 
   return (
-    <div className="flex h-full w-full flex-col md:flex-row">
+    <div className="flex h-full w-full bg-white dark:bg-[#09090b]">
       {/* --- LEFT PANEL: CHAT --- */}
-      <div className="flex flex-col h-full w-full md:w-1/2 border-r bg-white dark:bg-zinc-900 transition-all">
-        <header className="flex h-14 items-center border-b px-6 bg-white dark:bg-zinc-900 z-10">
-          <h1 className="font-semibold truncate">{conversation.title}</h1>
+      <div className="flex flex-col h-full w-[400px] border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 z-10">
+        <header className="h-14 flex items-center px-5 border-b border-slate-100 dark:border-zinc-900">
+          <h1 className="font-semibold text-sm tracking-tight text-slate-900 dark:text-slate-100">
+            {conversation.title}
+          </h1>
+          <div className="ml-auto flex gap-2">
+            <Badge
+              variant="outline"
+              className="font-normal text-slate-500 rounded-[4px] border-slate-200"
+            >
+              v1.0
+            </Badge>
+          </div>
         </header>
 
-        <ScrollArea className="flex-1 p-4">
-          <div className="mx-auto max-w-xl space-y-6 pb-4">
+        <ScrollArea className="flex-1 px-5 py-6">
+          <div className="space-y-8 pb-4">
+            {messages.length === 0 && (
+              <div className="mt-10 text-center text-sm text-slate-400">
+                <p>Describe the interface you want to build.</p>
+                <p className="text-xs mt-2 text-slate-300">
+                  "Create a settings form with email notification toggles"
+                </p>
+              </div>
+            )}
+
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex gap-3 ${
-                  msg.role === "user" ? "flex-row-reverse" : "flex-row"
-                }`}
+                className={cn(
+                  "flex flex-col gap-1 max-w-[95%]",
+                  msg.role === "user"
+                    ? "ml-auto items-end"
+                    : "mr-auto items-start",
+                )}
               >
-                <Avatar className="h-8 w-8">
-                  {msg.role === "assistant" ? (
-                    <>
-                      <AvatarImage src="/bot-avatar.png" />
-                      <AvatarFallback className="bg-blue-600 text-white">
-                        <Bot size={16} />
-                      </AvatarFallback>
-                    </>
-                  ) : (
-                    <>
-                      <AvatarImage src="/user-avatar.png" />
-                      <AvatarFallback className="bg-zinc-800 text-white">
-                        <User size={16} />
-                      </AvatarFallback>
-                    </>
-                  )}
-                </Avatar>
                 <div
-                  className={`rounded-lg px-4 py-2 text-sm shadow-sm max-w-[85%] whitespace-pre-wrap ${
+                  className={cn(
+                    "px-3.5 py-2.5 text-sm leading-relaxed rounded-[12px]",
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-slate-100 dark:bg-zinc-800"
-                  }`}
+                      ? "bg-[#222] text-white rounded-tr-sm"
+                      : "bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-slate-300 rounded-tl-sm",
+                  )}
                 >
                   {msg.content}
                 </div>
+                <span className="text-[10px] text-slate-300 font-medium px-1">
+                  {msg.role === "user" ? "You" : "Assistant"}
+                </span>
               </div>
             ))}
 
             {isAiLoading && (
-              <div className="flex gap-3 animate-pulse">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="bg-blue-600 text-white">
-                    <Bot size={16} />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="space-y-2">
-                  {partialObject?.message && (
-                    <div className="rounded-lg bg-slate-100 px-4 py-2 text-sm dark:bg-zinc-800">
-                      {partialObject.message}
-                    </div>
+              <div className="flex flex-col gap-1 mr-auto max-w-[90%]">
+                <div className="bg-slate-50 border border-slate-100 dark:bg-zinc-900 px-3.5 py-2.5 rounded-[12px] rounded-tl-sm text-sm text-slate-600">
+                  {partialObject?.message || (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" />{" "}
+                      processing...
+                    </span>
                   )}
-                  <div className="flex items-center gap-2 text-xs text-blue-600">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Updating interface...</span>
-                  </div>
                 </div>
+                {/* Visual indicator of actions happening */}
+                {(partialObject?.actions?.length ?? 0) > 0 && (
+                  <div className="flex items-center gap-1.5 text-[10px] text-indigo-500 font-mono pl-1 mt-1">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    UPDATING INTERFACE STATE...
+                  </div>
+                )}
               </div>
             )}
             <div ref={scrollRef} />
           </div>
         </ScrollArea>
 
-        <div className="p-4 border-t bg-white dark:bg-zinc-900">
-          <form
-            onSubmit={handleTextSubmit}
-            className="mx-auto flex max-w-xl items-center gap-2"
-          >
+        <div className="p-4 border-t border-slate-100 dark:border-zinc-900 bg-white/50 backdrop-blur-sm">
+          <div className="relative">
             <Input
-              placeholder="Describe the interface..."
+              placeholder="Type instructions..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isAiLoading}
-              className="flex-1"
+              className="pr-10 h-11 bg-white border-slate-200 focus-visible:ring-indigo-500/20 shadow-sm rounded-[8px]"
             />
             <Button
-              type="submit"
-              size="icon"
+              size="sm"
+              className={cn(
+                "absolute right-1.5 top-1.5 h-8 w-8 rounded-[6px] transition-all",
+                input.trim()
+                  ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                  : "bg-slate-100 text-slate-400",
+              )}
+              onClick={() => handleTextSubmit()}
               disabled={isAiLoading || !input.trim()}
             >
-              <Send className="h-4 w-4" />
+              <ArrowUp className="h-4 w-4" />
             </Button>
-          </form>
+          </div>
         </div>
       </div>
 
       {/* --- RIGHT PANEL: PREVIEW --- */}
-      <div className="flex flex-col h-full w-full md:w-1/2 bg-slate-50 dark:bg-zinc-950 border-l">
-        <header className="flex h-14 items-center justify-between border-b bg-white px-6 dark:bg-zinc-900">
+      <div className="flex flex-col flex-1 h-full bg-[#f8f9fc] dark:bg-[#0c0c0c] bg-dot-pattern relative overflow-hidden">
+        <header className="h-14 flex items-center justify-between px-6 border-b border-slate-200/60 dark:border-zinc-800 bg-white/80 dark:bg-black/50 backdrop-blur-md sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold">Preview</h2>
-            <Badge variant="secondary">{containers.length} Tabs</Badge>
+            <div className="bg-slate-100 dark:bg-zinc-800 p-1.5 rounded-md">
+              <Smartphone className="h-4 w-4 text-slate-500" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Preview Canvas
+            </span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClear}
-            className="text-red-500 hover:text-red-600 hover:bg-red-50"
-          >
-            <Trash2 className="h-4 w-4 mr-2" /> Delete
-          </Button>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="secondary"
+              className="bg-white border shadow-sm font-mono text-[10px]"
+            >
+              {containers.length} VIEWS
+            </Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1.5 bg-white shadow-sm hover:bg-slate-50"
+            >
+              <Play size={10} className="fill-current" /> Run
+            </Button>
+          </div>
         </header>
 
-        <div className="flex-1 p-6 overflow-hidden">
+        <div className="flex-1 p-8 overflow-hidden flex flex-col items-center">
           {containers.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-muted-foreground border-2 border-dashed rounded-xl border-slate-200 dark:border-zinc-800 bg-slate-100/50 dark:bg-zinc-900/50 m-4">
-              <div className="bg-white dark:bg-zinc-800 p-4 rounded-full mb-4 shadow-sm">
-                <Layout className="h-8 w-8 text-blue-500" />
+            <div className="flex h-full flex-col items-center justify-center text-slate-400">
+              <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center mb-4">
+                <div className="h-8 w-8 rounded-sm border-2 border-dashed border-slate-300 dark:border-zinc-700" />
               </div>
-              <h3 className="font-semibold text-lg text-foreground">
-                No Interface Yet
-              </h3>
+              <span className="font-medium text-sm">
+                Waiting for generation...
+              </span>
             </div>
           ) : (
-            <Tabs
-              value={activeTab}
-              onValueChange={setActiveTab}
-              className="h-full flex flex-col"
-            >
-              <TabsList className="w-full justify-start overflow-x-auto bg-transparent border-b h-auto p-0 rounded-none space-x-6">
-                {containers.map((c) => (
-                  <TabsTrigger
-                    key={c.id}
-                    value={c.id}
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:bg-transparent px-4 py-2"
-                  >
-                    {c.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+            <div className="w-full max-w-2xl bg-white dark:bg-zinc-950 rounded-lg shadow-xl shadow-slate-200/50 dark:shadow-black border border-slate-200 dark:border-zinc-800 flex flex-col overflow-hidden max-h-full">
+              <Tabs
+                value={activeTab}
+                onValueChange={setActiveTab}
+                className="flex flex-col h-full"
+              >
+                <div className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 px-2 pt-2">
+                  <TabsList className="bg-transparent h-auto p-0 gap-1 w-full justify-start">
+                    {containers.map((c) => (
+                      <TabsTrigger
+                        key={c.id}
+                        value={c.id}
+                        className="px-4 py-2.5 rounded-t-md rounded-b-none border border-transparent data-[state=active]:bg-white data-[state=active]:border-slate-200 data-[state=active]:border-b-white data-[state=active]:shadow-sm text-xs font-medium text-slate-500 data-[state=active]:text-indigo-600 relative top-[1px]"
+                      >
+                        {c.label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
 
-              <div className="flex-1 mt-6 overflow-hidden relative">
-                <ScrollArea className="h-full pr-4 pb-20">
-                  {containers.map((container) => (
-                    <TabsContent
-                      key={container.id}
-                      value={container.id}
-                      className="mt-0 space-y-6 data-[state=inactive]:hidden"
-                    >
-                      <div className="space-y-1">
-                        <h3 className="text-lg font-medium">
-                          {container.label}
-                        </h3>
-                        {container.description && (
-                          <p className="text-sm text-muted-foreground">
-                            {container.description}
-                          </p>
-                        )}
-                      </div>
-                      <div className="grid gap-6">
-                        {container.widgets.length === 0 ? (
-                          <div className="text-center py-10 text-muted-foreground italic border rounded-lg bg-white/50">
-                            Empty tab
-                          </div>
-                        ) : (
-                          container.widgets.map((widget) => {
+                <div className="flex-1 overflow-hidden relative bg-white dark:bg-zinc-950">
+                  <ScrollArea className="h-full">
+                    {containers.map((container) => (
+                      <TabsContent
+                        key={container.id}
+                        value={container.id}
+                        className="mt-0 p-8 space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300"
+                      >
+                        <div className="space-y-1 mb-6">
+                          <h2 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">
+                            {container.label}
+                          </h2>
+                          {container.description && (
+                            <p className="text-sm text-slate-500">
+                              {container.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="grid gap-6">
+                          {container.widgets.map((widget) => {
                             const widgetProps = (widget.props as object) || {};
                             const fullWidget = {
                               ...widget,
                               ...widgetProps,
                             } as Widget;
-
                             return (
-                              <Card
+                              <WidgetRenderer
                                 key={widget.id}
-                                className="shadow-sm border-slate-200 dark:border-zinc-800"
-                              >
-                                <CardContent className="p-6">
-                                  <WidgetRenderer
-                                    widget={fullWidget}
-                                    value={widget.value}
-                                    onChange={(val) =>
-                                      handleWidgetChange(widget.key, val)
-                                    }
-                                    disabled={isAiLoading}
-                                  />
-                                </CardContent>
-                              </Card>
+                                widget={fullWidget}
+                                value={widget.value}
+                                onChange={(val) =>
+                                  handleWidgetChange(widget.key, val)
+                                }
+                                disabled={isAiLoading}
+                              />
                             );
-                          })
-                        )}
-                      </div>
-                    </TabsContent>
-                  ))}
-                </ScrollArea>
-              </div>
-            </Tabs>
+                          })}
+                        </div>
+                      </TabsContent>
+                    ))}
+                  </ScrollArea>
+                </div>
+              </Tabs>
+            </div>
           )}
         </div>
       </div>

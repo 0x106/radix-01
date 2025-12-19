@@ -5,7 +5,7 @@ import { id } from "@instantdb/react";
 import { useRouter, useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, MessageSquare, LogOut, Trash2 } from "lucide-react";
+import { Plus, Trash2, Command } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Sidebar({ user }: { user: any }) {
@@ -22,7 +22,7 @@ export function Sidebar({ user }: { user: any }) {
     db.transact(
       db.tx.conversations[newId]
         .update({
-          title: "New Conversation",
+          title: "Untitled Project",
           createdAt: Date.now(),
         })
         .link({ owner: user.id }),
@@ -31,15 +31,10 @@ export function Sidebar({ user }: { user: any }) {
   };
 
   const handleDelete = (e: React.MouseEvent, convId: string) => {
-    e.stopPropagation(); // Prevent navigation click
-
-    if (confirm("Are you sure you want to delete this conversation?")) {
+    e.stopPropagation();
+    if (confirm("Delete this thread?")) {
       db.transact(db.tx.conversations[convId].delete());
-
-      // If we deleted the active conversation, go home
-      if (params.id === convId) {
-        router.push("/");
-      }
+      if (params.id === convId) router.push("/");
     }
   };
 
@@ -48,70 +43,82 @@ export function Sidebar({ user }: { user: any }) {
   };
 
   return (
-    <div className="w-64 border-r bg-zinc-50 dark:bg-zinc-900 flex flex-col h-full shrink-0">
-      <div className="p-4 border-b">
-        <Button onClick={handleNewChat} className="w-full justify-start gap-2">
-          <Plus size={16} /> New Conversation
+    <div className="w-[260px] border-r border-slate-200 dark:border-zinc-800 bg-[#fbfbfb] dark:bg-[#0c0c0c] flex flex-col h-full shrink-0">
+      {/* Brand / Header */}
+      <div className="h-14 flex items-center px-4 border-b border-slate-100 dark:border-zinc-800/50">
+        <div className="flex items-center gap-2 font-semibold text-sm tracking-tight">
+          <div className="h-5 w-5 bg-indigo-600 rounded-[4px] flex items-center justify-center">
+            <Command className="h-3 w-3 text-white" />
+          </div>
+          <span>Radix Studio</span>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div className="p-3">
+        <Button
+          onClick={handleNewChat}
+          className="w-full justify-start gap-2 h-9 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:hover:bg-zinc-800 transition-all"
+          variant="ghost"
+        >
+          <Plus size={14} className="text-indigo-500" />
+          <span className="text-xs font-medium">New Interface</span>
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 p-2">
-        <div className="space-y-1">
+      <div className="px-4 py-2">
+        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+          History
+        </h3>
+      </div>
+
+      <ScrollArea className="flex-1 px-3">
+        <div className="space-y-[2px]">
           {data?.conversations.map((conv) => {
             const isActive = params.id === conv.id;
 
             return (
-              <div
-                key={conv.id}
-                className="group flex items-center gap-1 pr-1 relative"
-              >
-                <Button
-                  variant={isActive ? "secondary" : "ghost"}
+              <div key={conv.id} className="group relative flex items-center">
+                <button
                   className={cn(
-                    "flex-1 justify-start gap-2 font-normal truncate pr-8", // Add padding for the delete button
-                    isActive && "bg-slate-200 dark:bg-zinc-800",
+                    "flex-1 text-left px-3 py-2 rounded-[6px] text-xs font-medium transition-colors truncate pr-8",
+                    isActive
+                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300"
+                      : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800/50 hover:text-slate-900",
                   )}
                   onClick={() => router.push(`/conversation/${conv.id}`)}
                 >
-                  <MessageSquare
-                    size={14}
-                    className="text-muted-foreground shrink-0"
-                  />
-                  <span className="truncate">{conv.title}</span>
-                </Button>
+                  {conv.title}
+                </button>
 
-                {/* Delete Button - visible on hover or if active */}
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <button
                   className={cn(
-                    "h-6 w-6 absolute right-2 opacity-0 transition-opacity text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20",
+                    "absolute right-2 p-1 rounded-sm opacity-0 transition-all text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20",
                     "group-hover:opacity-100",
-                    isActive && "opacity-100", // Always show on active tab for better UX
+                    isActive && "opacity-100",
                   )}
                   onClick={(e) => handleDelete(e, conv.id)}
                 >
                   <Trash2 size={12} />
-                </Button>
+                </button>
               </div>
             );
           })}
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t mt-auto">
-        <div className="flex items-center justify-between">
-          <div className="text-xs text-muted-foreground truncate max-w-[120px]">
-            {user.email}
+      {/* Footer Profile */}
+      <div className="p-3 border-t border-slate-100 dark:border-zinc-800/50 mt-auto">
+        <div
+          className="flex items-center gap-3 p-2 rounded-[6px] hover:bg-slate-100 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
+          onClick={handleLogout}
+        >
+          <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 shrink-0" />
+          <div className="flex-1 overflow-hidden">
+            <p className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
+              {user.email}
+            </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleLogout}
-            title="Sign Out"
-          >
-            <LogOut size={16} />
-          </Button>
         </div>
       </div>
     </div>
