@@ -1,0 +1,199 @@
+<svg
+  viewBox="0 0 256 256"
+  width="256"
+  height="256"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <style>
+      .lines {
+        stroke: black;
+        stroke-width: 16;
+        stroke-linecap: round;
+      }
+    </style>
+  </defs>
+
+  <!-- First set of lines -->
+  <g class="lines">
+    <line x1="72" y1="16" x2="16" y2="72">
+      <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="184" y1="16" x2="16" y2="184">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="72" x2="72" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="184" x2="184" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="128" y1="16" x2="16" y2="128">
+      <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="-350 350; 0 0; 350 -350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="16" x2="16" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="-350 350; 0 0; 350 -350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="128" x2="128" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="-350 350; 0 0; 350 -350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+  </g>
+
+  <!-- Second set of lines with delayed start -->
+  <g class="lines">
+    <line x1="72" y1="16" x2="16" y2="72">
+      <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        begin="-1.25s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="184" y1="16" x2="16" y2="184">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        begin="-1.25s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="72" x2="72" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        begin="-1.25s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="184" x2="184" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="350 -350; 0 0; -350 350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        begin="-1.25s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="128" y1="16" x2="16" y2="128">
+      <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="-350 350; 0 0; 350 -350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        begin="-1.25s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="16" x2="16" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="-350 350; 0 0; 350 -350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        begin="-1.25s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+    <line x1="240" y1="128" x2="128" y2="240">
+       <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="-350 350; 0 0; 350 -350"
+        keyTimes="0; 0.5; 1"
+        dur="2.5s"
+        begin="-1.25s"
+        repeatCount="indefinite"
+        calcMode="spline"
+        keySplines="0.42 0 0.58 1; 0.42 0 0.58 1"
+      />
+    </line>
+  </g>
+</svg>

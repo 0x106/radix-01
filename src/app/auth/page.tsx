@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, ArrowRight } from "lucide-react";
 
+import Image from "next/image";
+import Icon from "@/app/animated-icon.svg";
+
 export default function AuthPage() {
   const [sentEmail, setSentEmail] = useState("");
   const [email, setEmail] = useState("");
@@ -38,14 +41,14 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#fafafa] dark:bg-[#0a0a0a] p-4 text-center">
-      <div className="w-full max-w-[340px] space-y-6">
-        <div className="space-y-2">
-          <div className="mx-auto h-10 w-10 rounded-md bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 mb-6">
-            <div className="h-4 w-4 bg-white rounded-sm" />
+    <div className="flex w-full min-h-screen flex-col items-center justify-center bg-[#fafafa] dark:bg-[#0a0a0a] p-4 text-center">
+      <div className="w-fulla space-y-6 bg-white p-12 rounded-md shadow-2xl">
+        <div className="space-y-2 ">
+          <div className="flex items-center justify-center  mb-6">
+            <Image width="36" height="36" src={Icon} alt="Logo" />
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-            Interface Builder
+            Radix
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Sign in to access your workspace.
@@ -116,8 +119,8 @@ export default function AuthPage() {
         )}
       </div>
 
-      <div className="fixed bottom-6 text-xs text-slate-300 dark:text-slate-700 font-mono">
-        SECURED BY INSTANT
+      <div className="fixed bottom-6 text-xs text-slate-300 dark:text-slate-700 font-mono uppercase">
+        built in london
       </div>
     </div>
   );
