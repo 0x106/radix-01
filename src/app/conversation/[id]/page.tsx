@@ -94,6 +94,7 @@ export default function ConversationPage({
     widgetKeyMap: Map<string, string>,
   ) => {
     switch (action.type) {
+      // ... ADD_CONTAINER, UPDATE_CONTAINER, DELETE_CONTAINER, ADD_WIDGET cases remain the same ...
       case "ADD_CONTAINER":
         if (action.container) {
           const realContainerId = generateId();
@@ -154,9 +155,28 @@ export default function ConversationPage({
             if (existing) targetWidgetId = existing.id;
           }
           if (targetWidgetId) {
-            const { value, ...restProps } = updates;
-            const updatePayload: any = { ...restProps };
+            // Retrieve existing props to merge correctly
+            const existingWidget = allExistingWidgets.find(
+              (w) => w.id === targetWidgetId,
+            );
+            const currentProps = (existingWidget?.props as object) || {};
+
+            // Separate schema fields from dynamic props (e.g., placeholder, options)
+            const { label, description, type, value, ...restProps } =
+              updates as any;
+
+            const updatePayload: any = {};
+            if (label !== undefined) updatePayload.label = label;
+            if (description !== undefined)
+              updatePayload.description = description;
+            if (type !== undefined) updatePayload.type = type;
             if (value !== undefined) updatePayload.value = value;
+
+            // Merge remaining fields into 'props'
+            if (Object.keys(restProps).length > 0) {
+              updatePayload.props = { ...currentProps, ...restProps };
+            }
+
             txs.push(db.tx.widgets[targetWidgetId].merge(updatePayload));
           }
         }
