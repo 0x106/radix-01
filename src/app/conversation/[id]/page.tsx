@@ -13,15 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import {
-  Send,
-  Bot,
-  User,
-  Loader2,
-  Trash2,
-  Layout,
-  Sparkles,
-} from "lucide-react";
+import { Send, Bot, User, Loader2, Trash2, Layout } from "lucide-react";
 
 export default function ConversationPage({
   params,
@@ -36,7 +28,7 @@ export default function ConversationPage({
       $: { where: { id: conversationId } },
       messages: { $: { order: { createdAt: "asc" } } },
       containers: {
-        $: { order: { label: "asc" } }, // Simple ordering
+        $: { order: { label: "asc" } },
         widgets: {},
       },
     },
@@ -46,11 +38,10 @@ export default function ConversationPage({
   const messages = data?.conversations[0]?.messages || [];
   const containers = data?.conversations[0]?.containers || [];
 
-  // Flatten widgets from containers for easier access if needed, but we can iterate normally
-  // However, we want to know active tab state.
+  const allExistingWidgets = containers.flatMap((c) => c.widgets);
+
   const [activeTab, setActiveTab] = useState<string>("");
 
-  // Set initial active tab
   useEffect(() => {
     if (containers.length > 0 && !activeTab) {
       setActiveTab(containers[0].id);
@@ -72,6 +63,7 @@ export default function ConversationPage({
       if (!object) return;
 
       const txs = [];
+      const timestamp = Date.now();
 
       // 1. Add Assistant Message
       const msgId = generateId();
@@ -80,37 +72,48 @@ export default function ConversationPage({
           .update({
             role: "assistant",
             content: object.message,
-            createdAt: Date.now(),
+            createdAt: timestamp,
           })
           .link({ conversation: conversationId }),
       );
 
       // 2. Process Actions
+      const containerIdMap = new Map<string, string>();
+      const widgetKeyMap = new Map<string, string>();
+
       if (object.actions) {
         object.actions.forEach((action) => {
-          processAction(action, txs);
+          processAction(action, txs, containerIdMap, widgetKeyMap);
         });
       }
 
-      // Execute all changes atomically
       db.transact(txs);
 
-      // Update Conversation Title if it's the first real interaction
       if (conversation?.title === "New Conversation" && messages.length > 0) {
-        // Simple heuristic: rename chat to first user message snippet
-        // We can't access 'input' here easily if it's cleared, but we can do it separately.
+        // Optional: Update title logic
       }
     },
     onError: (err) => console.error("AI Error:", err),
   });
 
-  const processAction = (action: WidgetAction, txs: any[]) => {
+  const processAction = (
+    action: WidgetAction,
+    txs: any[],
+    containerIdMap: Map<string, string>,
+    widgetKeyMap: Map<string, string>,
+  ) => {
     switch (action.type) {
       case "ADD_CONTAINER":
         if (action.container) {
+          const realContainerId = generateId();
+          containerIdMap.set(action.container.id, realContainerId);
+
           txs.push(
-            db.tx.containers[action.container.id]
-              .update(action.container)
+            db.tx.containers[realContainerId]
+              .update({
+                label: action.container.label,
+                description: action.container.description,
+              })
               .link({ conversation: conversationId }),
           );
         }
@@ -118,42 +121,43 @@ export default function ConversationPage({
 
       case "UPDATE_CONTAINER":
         if (action.container) {
-          txs.push(
-            db.tx.containers[action.container.id].merge(action.container),
-          );
+          const targetId =
+            containerIdMap.get(action.container.id) || action.container.id;
+          txs.push(db.tx.containers[targetId].merge(action.container));
         }
         break;
 
       case "DELETE_CONTAINER":
         if (action.targetId) {
-          txs.push(db.tx.containers[action.targetId].delete());
+          const targetId =
+            containerIdMap.get(action.targetId) || action.targetId;
+          txs.push(db.tx.containers[targetId].delete());
         }
         break;
 
       case "ADD_WIDGET":
         if (action.widget && action.widget.containerId) {
-          // Extract known props to save cleanly
-          const {
-            key,
-            type,
-            label,
-            description,
-            containerId,
-            value,
-            ...restProps
-          } = action.widget;
+          const resolvedContainerId =
+            containerIdMap.get(action.widget.containerId) ||
+            action.widget.containerId;
+          const realWidgetId = generateId();
+          widgetKeyMap.set(action.widget.key, realWidgetId);
+
+          const { key, type, label, description, value, ...restProps } =
+            action.widget;
 
           txs.push(
-            db.tx.widgets[key] // Using key as ID for simplicity, or generate a UUID if key isn't unique enough globally
+            db.tx.widgets[realWidgetId]
               .update({
                 key,
                 type,
                 label,
                 description,
-                value: value ?? null, // Save initial value if provided
-                props: restProps, // Save other props (min, max, options) as JSON
+                // Optional fields: if undefined/null, they are effectively unset in DB
+                value: value ?? undefined,
+                props: restProps ?? undefined,
               })
-              .link({ container: containerId }),
+              .link({ container: resolvedContainerId }),
           );
         }
         break;
@@ -161,28 +165,46 @@ export default function ConversationPage({
       case "UPDATE_WIDGET":
         if (action.widget) {
           const { key, containerId, ...updates } = action.widget;
-          // We need to carefully merge "props" and top-level fields
-          // For simplicity, we just merge what we have.
-          // Special handling: if 'value' is present, update it.
+          let targetWidgetId = widgetKeyMap.get(key);
 
-          // Separate generic props from top-level schema fields
-          const { value, label, description, type, ...restProps } = updates;
+          if (!targetWidgetId) {
+            const existing = allExistingWidgets.find((w) => w.key === key);
+            if (existing) targetWidgetId = existing.id;
+          }
 
-          const updatePayload: any = {};
-          if (label) updatePayload.label = label;
-          if (description) updatePayload.description = description;
-          if (type) updatePayload.type = type;
-          if (value !== undefined) updatePayload.value = value;
-          if (Object.keys(restProps).length > 0)
-            updatePayload.props = restProps;
+          if (targetWidgetId) {
+            const { value, label, description, type, ...restProps } = updates;
 
-          txs.push(db.tx.widgets[action.widget.key].merge(updatePayload));
+            const updatePayload: any = {};
+            if (label) updatePayload.label = label;
+            if (description) updatePayload.description = description;
+            if (type) updatePayload.type = type;
+
+            // Only update value if it's explicitly provided (including null to clear)
+            if (value !== undefined) updatePayload.value = value;
+
+            // Only merge props if they exist
+            if (Object.keys(restProps).length > 0)
+              updatePayload.props = restProps;
+
+            txs.push(db.tx.widgets[targetWidgetId].merge(updatePayload));
+          }
         }
         break;
 
       case "DELETE_WIDGET":
         if (action.targetId) {
-          txs.push(db.tx.widgets[action.targetId].delete());
+          let idToDelete = widgetKeyMap.get(action.targetId);
+          if (!idToDelete) {
+            const existing = allExistingWidgets.find(
+              (w) => w.key === action.targetId,
+            );
+            if (existing) idToDelete = existing.id;
+          }
+
+          if (idToDelete) {
+            txs.push(db.tx.widgets[idToDelete].delete());
+          }
         }
         break;
     }
@@ -195,7 +217,6 @@ export default function ConversationPage({
     const userContent = input;
     setInput("");
 
-    // 1. Optimistic User Message
     const msgId = generateId();
     db.transact(
       db.tx.messages[msgId]
@@ -207,7 +228,6 @@ export default function ConversationPage({
         .link({ conversation: conversationId }),
     );
 
-    // Update title if it's new
     if (conversation?.title === "New Conversation") {
       db.transact(
         db.tx.conversations[conversationId].update({
@@ -216,19 +236,15 @@ export default function ConversationPage({
       );
     }
 
-    // 2. Prepare Context
-    // We reconstruct the state from DB data to send to AI
-    const allWidgets = containers.flatMap((c) => c.widgets);
-
     const currentState = {
       containers: containers.map((c) => ({ id: c.id, label: c.label })),
-      widgets: allWidgets.map((w) => ({
+      widgets: allExistingWidgets.map((w) => ({
         key: w.key,
-        containerId: w.container?.id, // Access via link if populated, but simpler if we know structure
+        containerId: w.container?.id,
         type: w.type,
         label: w.label,
         value: w.value,
-        ...((w.props as object) || {}), // Spread stored JSON props
+        ...((w.props as object) || {}),
       })),
     };
 
@@ -248,18 +264,18 @@ export default function ConversationPage({
   };
 
   const handleWidgetChange = (key: string, val: any) => {
-    db.transact(db.tx.widgets[key].update({ value: val }));
+    const widget = allExistingWidgets.find((w) => w.key === key);
+    if (widget) {
+      db.transact(db.tx.widgets[widget.id].update({ value: val }));
+    }
   };
 
   const handleClear = () => {
     if (confirm("Delete this conversation?")) {
       db.transact(db.tx.conversations[conversationId].delete());
-      // Router will auto-redirect from layout or we can force it
-      // window.location.href = "/";
     }
   };
 
-  // Scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
@@ -436,9 +452,7 @@ export default function ConversationPage({
                             Empty tab
                           </div>
                         ) : (
-                          // Sort widgets to maintain order if you added an order index, otherwise they appear by creation time/ID
                           container.widgets.map((widget) => {
-                            // Reconstruct full widget object for renderer
                             const widgetProps = (widget.props as object) || {};
                             const fullWidget = {
                               ...widget,

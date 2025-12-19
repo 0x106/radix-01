@@ -23,8 +23,8 @@ const _schema = i.schema({
       type: i.string(),
       label: i.string(),
       description: i.string().optional(),
-      props: i.json(), // Store specific props like options, min, max
-      value: i.json(), // Store the user's input value
+      props: i.json().optional(), // Store specific props like options, min, max
+      value: i.json().optional(), // Store the user's input value
     }),
   },
   links: {
