@@ -1,3 +1,4 @@
+// app/conversation/[id]/page.tsx
 "use client";
 
 import { useEffect, useRef, useState, use } from "react";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUp, Loader2, Play, RefreshCw, Smartphone } from "lucide-react";
+import { ArrowUp, Loader2, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function ConversationPage({
@@ -86,7 +87,7 @@ export default function ConversationPage({
     onError: (err) => console.error("AI Error:", err),
   });
 
-  // Action Processor (Same Logic, condensed for brevity)
+  // Action Processor
   const processAction = (
     action: WidgetAction,
     txs: any[],
@@ -94,7 +95,6 @@ export default function ConversationPage({
     widgetKeyMap: Map<string, string>,
   ) => {
     switch (action.type) {
-      // ... ADD_CONTAINER, UPDATE_CONTAINER, DELETE_CONTAINER, ADD_WIDGET cases remain the same ...
       case "ADD_CONTAINER":
         if (action.container) {
           const realContainerId = generateId();
@@ -155,13 +155,10 @@ export default function ConversationPage({
             if (existing) targetWidgetId = existing.id;
           }
           if (targetWidgetId) {
-            // Retrieve existing props to merge correctly
             const existingWidget = allExistingWidgets.find(
               (w) => w.id === targetWidgetId,
             );
             const currentProps = (existingWidget?.props as object) || {};
-
-            // Separate schema fields from dynamic props (e.g., placeholder, options)
             const { label, description, type, value, ...restProps } =
               updates as any;
 
@@ -172,7 +169,6 @@ export default function ConversationPage({
             if (type !== undefined) updatePayload.type = type;
             if (value !== undefined) updatePayload.value = value;
 
-            // Merge remaining fields into 'props'
             if (Object.keys(restProps).length > 0) {
               updatePayload.props = { ...currentProps, ...restProps };
             }
@@ -267,11 +263,14 @@ export default function ConversationPage({
   if (!conversation) return <div className="p-10">Conversation not found</div>;
 
   return (
-    <div className="flex h-full w-full bg-white dark:bg-[#09090b]">
+    // MAIN CONTAINER: h-full with overflow-hidden ensures inner separate scrolling
+    <div className="flex h-full w-full bg-white dark:bg-[#09090b] overflow-hidden">
       {/* --- LEFT PANEL: CHAT --- */}
-      <div className="flex flex-col h-full w-100 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 z-10">
-        <header className="h-12 flex items-center px-5 border-b border-slate-100 dark:border-zinc-900">
-          <h1 className="font-semibold text-sm tracking-tight text-slate-900 dark:text-slate-100">
+      {/* Fixed width (w-[400px]), shrink-0 so it doesn't collapse */}
+      <div className="flex flex-col h-full w-[400px] border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shrink-0 z-10">
+        {/* Chat Header */}
+        <header className="h-12 flex items-center px-5 border-b border-slate-100 dark:border-zinc-900 shrink-0">
+          <h1 className="font-semibold text-sm tracking-tight text-slate-900 dark:text-slate-100 truncate">
             {conversation.title}
           </h1>
           <div className="ml-auto flex gap-2">
@@ -284,67 +283,70 @@ export default function ConversationPage({
           </div>
         </header>
 
-        <ScrollArea className="flex-1 px-5 py-6">
-          <div className="space-y-8 pb-4">
-            {messages.length === 0 && (
-              <div className="mt-10 text-center text-sm text-slate-400">
-                <p>Describe the interface you want to build.</p>
-                <p className="text-xs mt-2 text-slate-300">
-                  "Create a settings form with email notification toggles"
-                </p>
-              </div>
-            )}
+        {/* Chat Messages Area - flex-1 with min-h-0 allows ScrollArea to work properly */}
+        <div className="flex-1 min-h-0 relative group">
+          <ScrollArea className="h-full">
+            <div className="px-5 py-6 space-y-8 pb-4">
+              {messages.length === 0 && (
+                <div className="mt-10 text-center text-sm text-slate-400">
+                  <p>Describe the interface you want to build.</p>
+                  <p className="text-xs mt-2 text-slate-300">
+                    "Create a table of users with edit actions"
+                  </p>
+                </div>
+              )}
 
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={cn(
-                  "flex flex-col gap-1 max-w-[95%]",
-                  msg.role === "user"
-                    ? "ml-auto items-end"
-                    : "mr-auto items-start",
-                )}
-              >
+              {messages.map((msg) => (
                 <div
+                  key={msg.id}
                   className={cn(
-                    "px-3.5 py-2.5 text-sm leading-relaxed rounded-[12px]",
+                    "flex flex-col gap-1 max-w-[95%]",
                     msg.role === "user"
-                      ? "bg-[#222] text-white rounded-tr-sm"
-                      : "bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-slate-300 rounded-tl-sm",
+                      ? "ml-auto items-end"
+                      : "mr-auto items-start",
                   )}
                 >
-                  {msg.content}
+                  <div
+                    className={cn(
+                      "px-3.5 py-2.5 text-sm leading-relaxed rounded-[12px]",
+                      msg.role === "user"
+                        ? "bg-[#222] text-white rounded-tr-sm"
+                        : "bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-slate-300 rounded-tl-sm",
+                    )}
+                  >
+                    {msg.content}
+                  </div>
+                  <span className="text-[10px] text-slate-300 font-medium px-1">
+                    {msg.role === "user" ? "You" : "Assistant"}
+                  </span>
                 </div>
-                <span className="text-[10px] text-slate-300 font-medium px-1">
-                  {msg.role === "user" ? "You" : "Assistant"}
-                </span>
-              </div>
-            ))}
+              ))}
 
-            {isAiLoading && (
-              <div className="flex flex-col gap-1 mr-auto max-w-[90%]">
-                <div className="bg-slate-50 border border-slate-100 dark:bg-zinc-900 px-3.5 py-2.5 rounded-[12px] rounded-tl-sm text-sm text-slate-600">
-                  {partialObject?.message || (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-3 w-3 animate-spin text-indigo-500" />{" "}
-                      processing...
-                    </span>
+              {isAiLoading && (
+                <div className="flex flex-col gap-1 mr-auto max-w-[90%]">
+                  <div className="bg-slate-50 border border-slate-100 dark:bg-zinc-900 px-3.5 py-2.5 rounded-[12px] rounded-tl-sm text-sm text-slate-600">
+                    {partialObject?.message || (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-3 w-3 animate-spin text-indigo-500" />{" "}
+                        processing...
+                      </span>
+                    )}
+                  </div>
+                  {(partialObject?.actions?.length ?? 0) > 0 && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-indigo-500 font-mono pl-1 mt-1">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      UPDATING INTERFACE STATE...
+                    </div>
                   )}
                 </div>
-                {/* Visual indicator of actions happening */}
-                {(partialObject?.actions?.length ?? 0) > 0 && (
-                  <div className="flex items-center gap-1.5 text-[10px] text-indigo-500 font-mono pl-1 mt-1">
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                    UPDATING INTERFACE STATE...
-                  </div>
-                )}
-              </div>
-            )}
-            <div ref={scrollRef} />
-          </div>
-        </ScrollArea>
+              )}
+              <div ref={scrollRef} />
+            </div>
+          </ScrollArea>
+        </div>
 
-        <div className="p-4 border-t border-slate-100 dark:border-zinc-900 bg-white/50 backdrop-blur-sm">
+        {/* Chat Input - Fixed at bottom */}
+        <div className="p-4 border-t border-slate-100 dark:border-zinc-900 bg-white/50 backdrop-blur-sm shrink-0">
           <div className="relative">
             <Input
               placeholder="Type instructions..."
@@ -352,6 +354,7 @@ export default function ConversationPage({
               onChange={(e) => setInput(e.target.value)}
               disabled={isAiLoading}
               className="pr-10 h-11 bg-white border-slate-200 focus-visible:ring-indigo-500/20 shadow-sm rounded-[8px]"
+              onKeyDown={(e) => e.key === "Enter" && handleTextSubmit()}
             />
             <Button
               size="sm"
@@ -371,8 +374,8 @@ export default function ConversationPage({
       </div>
 
       {/* --- RIGHT PANEL: PREVIEW --- */}
-      <div className="flex flex-col flex-1 h-full bg-[#f8f9fc] dark:bg-[#0c0c0c] relative overflow-hidden">
-        <div className="flex-1 overflow-hidden flex flex-col items-center">
+      <div className="flex-1 flex flex-col h-full bg-[#f8f9fc] dark:bg-[#0c0c0c] relative min-w-0">
+        <div className="flex-1 overflow-hidden flex flex-col h-full">
           {containers.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-slate-400">
               <div className="h-16 w-16 rounded-full bg-slate-100 dark:bg-zinc-900 flex items-center justify-center mb-4">
@@ -383,13 +386,14 @@ export default function ConversationPage({
               </span>
             </div>
           ) : (
-            <div className="w-full  bg-white flex flex-col overflow-hidden h-full">
+            <div className="w-full bg-white flex flex-col h-full overflow-hidden">
               <Tabs
                 value={activeTab}
                 onValueChange={setActiveTab}
-                className="flex flex-col h-full"
+                className="flex flex-col h-full w-full"
               >
-                <div className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 px-2 pt-2 h-12">
+                {/* Tabs Header - Fixed */}
+                <div className="border-b border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/50 px-2 pt-2 h-12 shrink-0">
                   <TabsList className="bg-transparent gap-1 w-full justify-start">
                     {containers.map((c) => (
                       <TabsTrigger
@@ -403,7 +407,9 @@ export default function ConversationPage({
                   </TabsList>
                 </div>
 
-                <div className="flex-1 overflow-hidden relative bg-white dark:bg-zinc-950">
+                {/* Content Area - Scrollable */}
+                {/* flex-1 and min-h-0 here ensures this div takes available space and scrolls internally */}
+                <div className="flex-1 min-h-0 bg-white dark:bg-zinc-950 relative">
                   <ScrollArea className="h-full">
                     {containers.map((container) => (
                       <TabsContent
@@ -422,7 +428,7 @@ export default function ConversationPage({
                           )}
                         </div>
 
-                        <div className="grid gap-6">
+                        <div className="grid gap-6 max-w-3xl">
                           {container.widgets.map((widget) => {
                             const widgetProps = (widget.props as object) || {};
                             const fullWidget = {

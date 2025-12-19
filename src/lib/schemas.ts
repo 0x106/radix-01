@@ -9,10 +9,15 @@ const WidgetBase = z.object({
   label: z.string().describe("The label for the input."),
   description: z.string().optional(),
 
-  // NEW: The 'value' is now part of the schema definition.
-  // We use a union to cover strings, numbers, booleans (toggles), and arrays (checkboxes)
+  // UPDATED: Added object arrays to support Table rows
   value: z
-    .union([z.string(), z.number(), z.boolean(), z.array(z.string())])
+    .union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.array(z.string()),
+      z.array(z.record(z.string(), z.string())), // <--- The only change in WidgetBase
+    ])
     .optional()
     .nullable()
     .describe(
@@ -74,6 +79,17 @@ export const SliderSchema = WidgetBase.extend({
     .optional(),
 });
 
+// NEW: Table Schema
+export const TableWidgetSchema = WidgetBase.extend({
+  type: z.literal("table"),
+  columns: z.array(
+    z.object({
+      header: z.string().describe("Display name for the column"),
+      key: z.string().describe("Key used in the data object"),
+    }),
+  ),
+});
+
 export const WidgetSchema = z.discriminatedUnion("type", [
   TextInputSchema,
   TextAreaSchema,
@@ -83,6 +99,7 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   RadioGroupSchema,
   CheckboxGroupSchema,
   SliderSchema,
+  TableWidgetSchema, // <--- Added here
 ]);
 
 export const ContainerSchema = z.object({
@@ -113,7 +130,6 @@ export const ChatResponseSchema = z.object({
   actions: z.array(WidgetActionSchema).optional(),
 });
 
-// We no longer need the manual intersection type!
 export type Widget = z.infer<typeof WidgetSchema>;
 export type Container = z.infer<typeof ContainerSchema>;
 export type WidgetAction = z.infer<typeof WidgetActionSchema>;
