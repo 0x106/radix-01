@@ -34,7 +34,7 @@ export default function RootLayout({
   );
 }
 // app/api/query/route.ts
-// app/api/chat/route.ts
+// app/api/query/route.ts
 import { openai } from "@ai-sdk/openai";
 import { streamObject } from "ai";
 import { ChatResponseSchema } from "@/lib/schemas";
@@ -45,25 +45,23 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const systemPrompt = `
-    You are an Interface Generator Agent. Your goal is to help the user accomplish a task (e.g., writing a story, planning a trip, generating code) by dynamically generating a user interface.
-
-    Instead of asking for information purely through text chat, you should generate specific UI 'widgets' that allow the user to input data structuredly.
+    You are an Interface Generator Agent. Your goal is to help the user accomplish a task by dynamically generating a user interface.
 
     ### Guidelines:
-    1. **Analyze the Context**: Determine what information is missing to fulfill the user's request.
-    2. **Choose the Right Widget**:
-       - Use 'text_input' for short names or titles.
-       - Use 'textarea' for long descriptions or prompts.
-       - Use 'radio_group' when the user must pick exactly one option from a list (e.g., Tone: Happy, Sad).
-       - Use 'checkbox_group' for multi-select (e.g., Genres: Sci-Fi, Horror).
-       - Use 'slider' for intensity or ranges (e.g., Creativity Level).
-       - Use 'toggle' for simple yes/no settings.
-    3. **Be Efficient**: Do not overwhelm the user. specific 2-4 relevant widgets per turn is usually best.
-    4. **Variable Keys**: Ensure the 'key' field in widgets is descriptive (e.g., use 'hero_name' instead of 'var1').
+    1. **Analyze the Context**: Determine what information is missing.
+    2. **Choose Widgets**: Use 'text_input', 'textarea', 'radio_group', 'checkbox_group', 'slider', or 'toggle'.
+    3. **Be Efficient**: 2-4 relevant widgets per turn.
+    4. **Variable Keys**: Use descriptive keys (e.g., 'hero_name').
 
     ### Interaction Flow:
-    - If the user sends a general request ("Help me write a character"), reply with a message and a form of widgets (Name, Age, Role, etc.).
-    - If the user has already provided data, acknowledge it in the 'message' field and move to the next step or generate the final output in the 'message' field.
+    - **Generating Interfaces**: If you need information, generate a 'message' (context) and a list of 'widgets'.
+    - **Processing Responses**:
+      - The user may respond with a JSON block labeled "[Form Submission]" containing the widgets you previously sent, but now populated with a "response" field.
+      - Parse this JSON to understand the user's choices.
+      - **Do not** simply repeat the data back. Acknowledge it in your next 'message' and either generate the *next* set of widgets (if more info is needed) or finalize the task.
+
+    ### Final Output:
+    - If the task is complete, provide the final result in the 'message' field with \`widgets: []\`.
   `;
 
   const result = streamObject({
@@ -75,6 +73,7 @@ export async function POST(req: Request) {
 
   return result.toTextStreamResponse();
 }
+// app/page.tsx
 // app/page.tsx
 "use client";
 
@@ -103,16 +102,16 @@ type Message = {
   content: string;
   widgets?: Widget[];
   isFormSubmitted?: boolean;
+  // New property to control UI visibility
+  isHidden?: boolean;
 };
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-
-  // Shared state for the currently active widgets (both streaming and history)
-  const [currentWidgetValues, setCurrentWidgetValues] = useState<
-    Record<string, any>
-  >({});
+  const [tempStreamValues, setTempStreamValues] = useState<Record<string, any>>(
+    {},
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -124,40 +123,43 @@ export default function ChatPage() {
     schema: ChatResponseSchema,
     onFinish: ({ object }) => {
       if (object) {
-        // Create the final message
+        // Hydrate widgets with temp values
+        const hydratedWidgets = (object.widgets || []).map((w: any) => ({
+          ...w,
+          response: tempStreamValues[w.key],
+        })) as Widget[];
+
         const newMessage: Message = {
           id: generateId(),
           role: "assistant",
           content: object.message,
-          widgets: object.widgets || [],
+          widgets: hydratedWidgets,
         };
         setMessages((prev) => [...prev, newMessage]);
-
-        // IMPORTANT: Do NOT clear currentWidgetValues here.
-        // This preserves any data the user typed while the widgets were streaming.
+        setTempStreamValues({});
       }
     },
     onError: (err) => console.error(err),
   });
 
-  // Auto-scroll logic
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, partialObject, isLoading]);
 
+  // --- 1. Text Input (Standard Chat) ---
   const handleTextSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    // Clear previous widget state when starting a new conversation turn
-    setCurrentWidgetValues({});
+    setTempStreamValues({});
 
     const userMsg: Message = {
       id: generateId(),
       role: "user",
       content: input,
+      isHidden: false, // Visible
     };
 
     const newHistory = [...messages, userMsg];
@@ -169,34 +171,48 @@ export default function ChatPage() {
     });
   };
 
+  const updateMessageWidget = (
+    messageId: string,
+    widgetKey: string,
+    newValue: any,
+  ) => {
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (msg.id !== messageId || !msg.widgets) return msg;
+        return {
+          ...msg,
+          widgets: msg.widgets.map((w) =>
+            w.key === widgetKey ? { ...w, response: newValue } : w,
+          ),
+        };
+      }),
+    );
+  };
+
+  // --- 2. Widget Submission (Hidden Data) ---
   const handleWidgetSubmit = (messageId: string, widgets: Widget[]) => {
-    // 1. Mark form as submitted to lock the UI
+    // Lock the form UI
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === messageId ? { ...msg, isFormSubmitted: true } : msg,
       ),
     );
 
-    // 2. Format responses for the LLM
-    const formattedResponses = widgets
-      .map((w) => {
-        const val = currentWidgetValues[w.key];
-        return `${w.label}: ${val !== undefined ? val : "(No answer)"}`;
-      })
-      .join("\n");
-
-    // 3. Clear widget state so it doesn't pollute the next turn
-    setCurrentWidgetValues({});
+    // Prepare JSON payload
+    const payload = JSON.stringify(widgets, null, 2);
+    const content = `[Form Submission]\n\`\`\`json\n${payload}\n\`\`\``;
 
     const userMsg: Message = {
       id: generateId(),
       role: "user",
-      content: `Here are my choices:\n${formattedResponses}`,
+      content: content,
+      isHidden: true, // HIDDEN from UI, but sent to LLM
     };
 
     const newHistory = [...messages, userMsg];
     setMessages(newHistory);
 
+    // Send ALL messages to the API (the mapper filters out custom props like isHidden)
     submit({
       messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
     });
@@ -217,97 +233,93 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* 1. History Messages */}
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex gap-3 ${
-                msg.role === "user" ? "flex-row-reverse" : "flex-row"
-              }`}
-            >
-              <Avatar className="h-8 w-8">
-                {msg.role === "assistant" ? (
-                  <>
-                    <AvatarImage src="/bot-avatar.png" />
-                    <AvatarFallback className="bg-blue-600 text-white">
-                      <Bot size={16} />
-                    </AvatarFallback>
-                  </>
-                ) : (
-                  <>
-                    <AvatarImage src="/user-avatar.png" />
-                    <AvatarFallback className="bg-zinc-800 text-white">
-                      <User size={16} />
-                    </AvatarFallback>
-                  </>
-                )}
-              </Avatar>
+          {/* History Messages */}
+          {messages.map((msg) => {
+            // SKIP RENDER IF HIDDEN
+            if (msg.isHidden) return null;
 
-              <div className={`flex flex-col max-w-[80%] gap-2`}>
-                {/* Text Bubble */}
-                {msg.content && (
-                  <div
-                    className={`rounded-lg px-4 py-2 text-sm shadow-sm ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-white dark:bg-zinc-900 border"
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  </div>
-                )}
-
-                {/* Render Widgets (Assistant Only) */}
-                {msg.role === "assistant" &&
-                  msg.widgets &&
-                  msg.widgets.length > 0 && (
-                    <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
-                      <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
-                        Interactive Interface
-                      </div>
-                      <div className="space-y-6 p-4">
-                        {msg.widgets.map((widget) => (
-                          <WidgetRenderer
-                            key={widget.key}
-                            widget={widget}
-                            value={
-                              msg.isFormSubmitted
-                                ? undefined
-                                : currentWidgetValues[widget.key]
-                            }
-                            disabled={!!msg.isFormSubmitted || isLoading}
-                            onChange={(val) =>
-                              setCurrentWidgetValues((prev) => ({
-                                ...prev,
-                                [widget.key]: val,
-                              }))
-                            }
-                          />
-                        ))}
-                        {!msg.isFormSubmitted && (
-                          <Button
-                            className="w-full"
-                            onClick={() =>
-                              handleWidgetSubmit(msg.id, msg.widgets!)
-                            }
-                            disabled={isLoading}
-                          >
-                            Submit Responses
-                          </Button>
-                        )}
-                        {msg.isFormSubmitted && (
-                          <div className="text-center text-xs text-muted-foreground italic">
-                            Responses submitted
-                          </div>
-                        )}
-                      </div>
-                    </Card>
+            return (
+              <div
+                key={msg.id}
+                className={`flex gap-3 ${
+                  msg.role === "user" ? "flex-row-reverse" : "flex-row"
+                }`}
+              >
+                <Avatar className="h-8 w-8">
+                  {msg.role === "assistant" ? (
+                    <>
+                      <AvatarImage src="/bot-avatar.png" />
+                      <AvatarFallback className="bg-blue-600 text-white">
+                        <Bot size={16} />
+                      </AvatarFallback>
+                    </>
+                  ) : (
+                    <>
+                      <AvatarImage src="/user-avatar.png" />
+                      <AvatarFallback className="bg-zinc-800 text-white">
+                        <User size={16} />
+                      </AvatarFallback>
+                    </>
                   )}
-              </div>
-            </div>
-          ))}
+                </Avatar>
 
-          {/* 2. Streaming Response */}
+                <div className={`flex flex-col max-w-[80%] gap-2`}>
+                  {msg.content && (
+                    <div
+                      className={`rounded-lg px-4 py-2 text-sm shadow-sm ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-white dark:bg-zinc-900 border"
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    </div>
+                  )}
+
+                  {msg.role === "assistant" &&
+                    msg.widgets &&
+                    msg.widgets.length > 0 && (
+                      <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
+                        <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                          Interactive Interface
+                        </div>
+                        <div className="space-y-6 p-4">
+                          {msg.widgets.map((widget) => (
+                            <WidgetRenderer
+                              key={widget.key}
+                              widget={widget}
+                              value={widget.response}
+                              disabled={!!msg.isFormSubmitted || isLoading}
+                              onChange={(val) =>
+                                updateMessageWidget(msg.id, widget.key, val)
+                              }
+                            />
+                          ))}
+                          {!msg.isFormSubmitted && (
+                            <Button
+                              className="w-full"
+                              onClick={() =>
+                                handleWidgetSubmit(msg.id, msg.widgets!)
+                              }
+                              disabled={isLoading}
+                            >
+                              Submit Responses
+                            </Button>
+                          )}
+                          {msg.isFormSubmitted && (
+                            <div className="text-center text-xs text-muted-foreground italic">
+                              Responses submitted
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Streaming Response */}
           {isLoading && (
             <div className="flex gap-3">
               <Avatar className="h-8 w-8">
@@ -316,7 +328,6 @@ export default function ChatPage() {
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col max-w-[80%] gap-2">
-                {/* Streaming Text */}
                 {partialObject?.message && (
                   <div className="rounded-lg border bg-white px-4 py-2 text-sm shadow-sm dark:bg-zinc-900">
                     <p className="whitespace-pre-wrap">
@@ -324,8 +335,6 @@ export default function ChatPage() {
                     </p>
                   </div>
                 )}
-
-                {/* Streaming Widgets - Appears instantly! */}
                 {partialObject?.widgets && partialObject.widgets.length > 0 && (
                   <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
                     <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 flex items-center gap-2">
@@ -333,16 +342,14 @@ export default function ChatPage() {
                       Generating Interface...
                     </div>
                     <div className="space-y-6 p-4">
-                      {partialObject.widgets.map((widget, idx) =>
-                        // Only render if type is present to prevent layout shift from empty objects
+                      {partialObject.widgets.map((widget: any, idx) =>
                         widget?.type && widget?.key ? (
                           <WidgetRenderer
-                            // Use index as key during streaming to avoid remounts while LLM types the key string
                             key={idx}
                             widget={widget}
-                            value={currentWidgetValues[widget.key]}
+                            value={tempStreamValues[widget.key]}
                             onChange={(val) =>
-                              setCurrentWidgetValues((prev) => ({
+                              setTempStreamValues((prev) => ({
                                 ...prev,
                                 [widget.key]: val,
                               }))
@@ -426,10 +433,15 @@ const schema: AppSchema = _schema;
 
 export type { AppSchema };
 export default schema;
+// state/page.tsx
+const Page = () => {
+  return <></>;
+};
+
+export default Page;
 // components/WidgetRenderer.tsx
 "use client";
 
-import { Widget } from "@/lib/schemas";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -445,9 +457,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { Widget } from "@/lib/schemas"; // This now includes { response?: any }
+
 interface WidgetRendererProps {
   widget: Widget;
-  value: any;
+  value: any; // This will receive widget.response from the parent
   onChange: (value: any) => void;
   disabled?: boolean;
 }
@@ -778,4 +792,12 @@ export const ChatResponseSchema = z.object({
   widgets: z.array(WidgetSchema).optional().nullable(),
 });
 
-export type Widget = z.infer<typeof WidgetSchema>;
+// export type Widget = z.infer<typeof WidgetSchema>;
+
+type BaseWidget = z.infer<typeof WidgetSchema>;
+
+// 2. Export a type that includes the UI-only 'response' field
+// We use Omit/Intersection to ensure TS knows 'response' exists on your widgets
+export type Widget = BaseWidget & {
+  response?: any;
+};

@@ -76,17 +76,32 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   SliderSchema,
 ]);
 
+export const WidgetActionSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("ADD"),
+    widget: WidgetSchema,
+  }),
+  z.object({
+    action: z.literal("UPDATE"),
+    key: z.string().describe("The key of the widget to update"),
+    // Partial widget to allow updating specific fields like label or description
+    patch: WidgetSchema.partial(),
+  }),
+  z.object({
+    action: z.literal("DELETE"),
+    key: z.string().describe("The key of the widget to remove"),
+  }),
+]);
+
 export const ChatResponseSchema = z.object({
-  message: z.string(),
-  widgets: z.array(WidgetSchema).optional().nullable(),
+  message: z.string().describe("Your verbal response to the user."),
+  actions: z
+    .array(WidgetActionSchema)
+    .optional()
+    .describe("List of state changes to the global UI."),
 });
 
-// export type Widget = z.infer<typeof WidgetSchema>;
-
-type BaseWidget = z.infer<typeof WidgetSchema>;
-
-// 2. Export a type that includes the UI-only 'response' field
-// We use Omit/Intersection to ensure TS knows 'response' exists on your widgets
-export type Widget = BaseWidget & {
-  response?: any;
-};
+// Helper Types
+export type WidgetAction = z.infer<typeof WidgetActionSchema>;
+// Re-export Widget with response
+export type Widget = z.infer<typeof WidgetSchema> & { response?: any };
