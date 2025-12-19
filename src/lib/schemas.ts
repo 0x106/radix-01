@@ -3,6 +3,9 @@ import { z } from "zod";
 // --- Primitives ---
 const WidgetBase = z.object({
   key: z.string().describe("The unique ID/variable name."),
+  containerId: z
+    .string()
+    .describe("The ID of the container this widget belongs to."), // NEW
   label: z.string().describe("The label for the input."),
   description: z.string().optional(),
 });
@@ -12,7 +15,7 @@ const OptionSchema = z.object({
   value: z.string(),
 });
 
-// --- Widget Types (Same as before) ---
+// --- Widget Types (Unchanged logic, just ensure they extend WidgetBase) ---
 export const TextInputSchema = WidgetBase.extend({
   type: z.literal("text_input"),
   placeholder: z.string().optional(),
@@ -64,7 +67,6 @@ export const SliderSchema = WidgetBase.extend({
     .optional(),
 });
 
-// --- Union ---
 export const WidgetSchema = z.discriminatedUnion("type", [
   TextInputSchema,
   TextAreaSchema,
@@ -76,21 +78,45 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   SliderSchema,
 ]);
 
-// --- NEW: Actions Schema ---
+// --- NEW: Container Schema ---
+export const ContainerSchema = z.object({
+  id: z
+    .string()
+    .describe("Unique ID for the container (e.g., 'personal_info')"),
+  label: z.string().describe("The display label for the tab"),
+  description: z.string().optional(),
+});
 
-export const ActionTypeSchema = z.enum(["ADD", "UPDATE", "DELETE"]);
+// --- Actions Schema ---
+// We now support actions for both Containers and Widgets
+
+export const ActionTypeSchema = z.enum([
+  "ADD_CONTAINER",
+  "UPDATE_CONTAINER",
+  "DELETE_CONTAINER",
+  "ADD_WIDGET",
+  "UPDATE_WIDGET",
+  "DELETE_WIDGET",
+]);
 
 export const WidgetActionSchema = z.object({
-  type: ActionTypeSchema.describe("The action to perform on the global state"),
-  key: z.string().describe("The key of the widget to target"),
-  widget: WidgetSchema.optional().describe(
-    "The widget definition. Required for ADD and UPDATE. Ignored for DELETE.",
-  ),
+  type: ActionTypeSchema,
+
+  // For Widget Actions
+  widget: WidgetSchema.optional(),
+
+  // For Container Actions
+  container: ContainerSchema.optional(),
+
+  // For DELETE actions (needs key or containerId)
+  targetId: z
+    .string()
+    .optional()
+    .describe(" The widget key or container ID to delete"),
 });
 
 export const ChatResponseSchema = z.object({
   message: z.string(),
-  // Instead of a fresh list, we ask for a list of actions/diffs
   actions: z.array(WidgetActionSchema).optional(),
 });
 
@@ -99,4 +125,5 @@ export type Widget = BaseWidget & {
   response?: any;
 };
 
+export type Container = z.infer<typeof ContainerSchema>;
 export type WidgetAction = z.infer<typeof WidgetActionSchema>;

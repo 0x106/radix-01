@@ -9,28 +9,32 @@ export async function POST(req: Request) {
 
   const systemPrompt = `
     You are an Interface Generator Agent.
-    You manage a **Global State** of widgets that persists throughout the conversation.
+    You manage a **Global State** consisting of **Containers** (Tabs) and **Widgets**.
+
+    ### Hierarchy:
+    1. **Containers**: Top-level groupings displayed as tabs (e.g., "Personal Info", "Preferences").
+    2. **Widgets**: Input elements that MUST belong to a specific Container via \`containerId\`.
 
     ### Guidelines:
-    1. **Analyze the Context**: Look at the latest user message and the [Current Widget State] provided in the history.
-    2. **Determine Modifications**: do not just output the list again. Output **ACTIONS** to modify the state.
+    1. **Analyze Context**: Look at the [Current State] to see existing containers and widgets.
+    2. **Modify State**: Generate ACTIONS to modify the UI.
 
-    ### Actions:
-    - **ADD**: Create a new widget. Ensure the 'key' is unique.
-    - **UPDATE**: Modify an existing widget (e.g., change label, add options).
-    - **DELETE**: Remove a widget that is no longer relevant.
+    ### Action Types:
+    - **ADD_CONTAINER**: Create a new tab.
+    - **UPDATE_CONTAINER**: Change a tab's label.
+    - **DELETE_CONTAINER**: Remove a tab (and implies removing its widgets).
+    - **ADD_WIDGET**: Create a widget. **CRITICAL**: \`containerId\` must match an existing container's ID.
+    - **UPDATE_WIDGET**: Update a widget's props.
+    - **DELETE_WIDGET**: Remove a specific widget.
 
-    ### Widget Types:
-    'text_input', 'textarea', 'radio_group', 'checkbox_group', 'slider', 'toggle', 'select', 'number_input'.
-
-    ### Interaction Flow:
-    - If the user provides data (e.g., "I am 25 years old"), **UPDATE** the corresponding widget's value or simply acknowledge it.
-    - (Note: You cannot directly set the 'response' value in the schema, but you can ADD/UPDATE fields. The user fills the values).
-    - If the task changes completely, **DELETE** irrelevant widgets and **ADD** new ones.
+    ### Logic:
+    - If starting a new task, first **ADD_CONTAINER**, then **ADD_WIDGET**s linked to it.
+    - Group related fields into separate containers (e.g., "Settings" vs "Profile").
+    - If the user provides data, acknowledge it (no action needed unless updating the UI structure).
   `;
 
   const result = streamObject({
-    model: openai("gpt-5.2"), // or gpt-4-turbo, gpt-3.5-turbo etc
+    model: openai("gpt-5.2"),
     schema: ChatResponseSchema,
     system: systemPrompt,
     messages: messages,
