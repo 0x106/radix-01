@@ -1,65 +1,36 @@
-// app/api/query/route.ts
 import { openai } from "@ai-sdk/openai";
 import { streamObject } from "ai";
 import { ChatResponseSchema } from "@/lib/schemas";
 
 export const maxDuration = 60;
 
-// export async function POST(req: Request) {
-//   const { messages } = await req.json();
-
-//   const systemPrompt = `
-//     You are an Interface Generator Agent. Your goal is to help the user accomplish a task by dynamically generating a user interface.
-
-//     ### Guidelines:
-//     1. **Analyze the Context**: Determine what information is missing.
-//     2. **Choose Widgets**: Use 'text_input', 'textarea', 'radio_group', 'checkbox_group', 'slider', or 'toggle'.
-//     3. **Be Efficient**: 2-4 relevant widgets per turn.
-//     4. **Variable Keys**: Use descriptive keys (e.g., 'hero_name').
-
-//     ### Interaction Flow:
-//     - **Generating Interfaces**: If you need information, generate a 'message' (context) and a list of 'widgets'.
-//     - **Processing Responses**:
-//       - The user may respond with a JSON block labeled "[Form Submission]" containing the widgets you previously sent, but now populated with a "response" field.
-//       - Parse this JSON to understand the user's choices.
-//       - **Do not** simply repeat the data back. Acknowledge it in your next 'message' and either generate the *next* set of widgets (if more info is needed) or finalize the task.
-
-//     ### Final Output:
-//     - If the task is complete, provide the final result in the 'message' field with \`widgets: []\`.
-//   `;
-
-//   const result = streamObject({
-//     model: openai("gpt-5.2"),
-//     schema: ChatResponseSchema,
-//     system: systemPrompt,
-//     messages: messages,
-//   });
-
-//   return result.toTextStreamResponse();
-// }
-
 export async function POST(req: Request) {
-  // Now we expect 'messages' AND 'currentWidgets' from the body
-  const { messages, currentWidgets } = await req.json();
+  const { messages } = await req.json();
 
   const systemPrompt = `
-    You are an Interface State Manager. You maintain a global UI state based on the conversation.
-
-    ### Current UI State:
-    ${JSON.stringify(currentWidgets || [], null, 2)}
+    You are an Interface Generator Agent.
+    You manage a **Global State** of widgets that persists throughout the conversation.
 
     ### Guidelines:
-    1. **State Persistence**: Widgets you create persist across the entire conversation.
-    2. **Actions**:
-       - 'ADD': Create a new widget.
-       - 'UPDATE': Modify an existing widget (change labels, options, etc.). Note: Do not use this to update user 'responses', only the UI configuration.
-       - 'DELETE': Remove a widget no longer needed.
-    3. **Efficiency**: Only emit actions for things that need to change. If a widget is fine as is, do not include an action for it.
-    4. **Context**: Use the 'message' field to explain why you are adding/removing UI elements.
+    1. **Analyze the Context**: Look at the latest user message and the [Current Widget State] provided in the history.
+    2. **Determine Modifications**: do not just output the list again. Output **ACTIONS** to modify the state.
+
+    ### Actions:
+    - **ADD**: Create a new widget. Ensure the 'key' is unique.
+    - **UPDATE**: Modify an existing widget (e.g., change label, add options).
+    - **DELETE**: Remove a widget that is no longer relevant.
+
+    ### Widget Types:
+    'text_input', 'textarea', 'radio_group', 'checkbox_group', 'slider', 'toggle', 'select', 'number_input'.
+
+    ### Interaction Flow:
+    - If the user provides data (e.g., "I am 25 years old"), **UPDATE** the corresponding widget's value or simply acknowledge it.
+    - (Note: You cannot directly set the 'response' value in the schema, but you can ADD/UPDATE fields. The user fills the values).
+    - If the task changes completely, **DELETE** irrelevant widgets and **ADD** new ones.
   `;
 
   const result = streamObject({
-    model: openai("gpt-5.2"),
+    model: openai("gpt-5.2"), // or gpt-4-turbo, gpt-3.5-turbo etc
     schema: ChatResponseSchema,
     system: systemPrompt,
     messages: messages,

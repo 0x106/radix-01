@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // --- Primitives ---
 const WidgetBase = z.object({
-  key: z.string().describe("The variable name (e.g., 'user_age')."),
+  key: z.string().describe("The unique ID/variable name."),
   label: z.string().describe("The label for the input."),
   description: z.string().optional(),
 });
@@ -12,7 +12,7 @@ const OptionSchema = z.object({
   value: z.string(),
 });
 
-// --- Widget Types ---
+// --- Widget Types (Same as before) ---
 export const TextInputSchema = WidgetBase.extend({
   type: z.literal("text_input"),
   placeholder: z.string().optional(),
@@ -76,32 +76,27 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   SliderSchema,
 ]);
 
-export const WidgetActionSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("ADD"),
-    widget: WidgetSchema,
-  }),
-  z.object({
-    action: z.literal("UPDATE"),
-    key: z.string().describe("The key of the widget to update"),
-    // Partial widget to allow updating specific fields like label or description
-    patch: WidgetSchema.partial(),
-  }),
-  z.object({
-    action: z.literal("DELETE"),
-    key: z.string().describe("The key of the widget to remove"),
-  }),
-]);
+// --- NEW: Actions Schema ---
 
-export const ChatResponseSchema = z.object({
-  message: z.string().describe("Your verbal response to the user."),
-  actions: z
-    .array(WidgetActionSchema)
-    .optional()
-    .describe("List of state changes to the global UI."),
+export const ActionTypeSchema = z.enum(["ADD", "UPDATE", "DELETE"]);
+
+export const WidgetActionSchema = z.object({
+  type: ActionTypeSchema.describe("The action to perform on the global state"),
+  key: z.string().describe("The key of the widget to target"),
+  widget: WidgetSchema.optional().describe(
+    "The widget definition. Required for ADD and UPDATE. Ignored for DELETE.",
+  ),
 });
 
-// Helper Types
+export const ChatResponseSchema = z.object({
+  message: z.string(),
+  // Instead of a fresh list, we ask for a list of actions/diffs
+  actions: z.array(WidgetActionSchema).optional(),
+});
+
+type BaseWidget = z.infer<typeof WidgetSchema>;
+export type Widget = BaseWidget & {
+  response?: any;
+};
+
 export type WidgetAction = z.infer<typeof WidgetActionSchema>;
-// Re-export Widget with response
-export type Widget = z.infer<typeof WidgetSchema> & { response?: any };
