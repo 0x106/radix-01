@@ -34,7 +34,6 @@ export default function RootLayout({
   );
 }
 // app/api/query/route.ts
-// app/api/query/route.ts
 import { openai } from "@ai-sdk/openai";
 import { streamObject } from "ai";
 import { ChatResponseSchema } from "@/lib/schemas";
@@ -45,23 +44,29 @@ export async function POST(req: Request) {
   const { messages } = await req.json();
 
   const systemPrompt = `
-    You are an Interface Generator Agent. Your goal is to help the user accomplish a task by dynamically generating a user interface.
+    You are an Interface Generator Agent.
+    You manage a **Global State** consisting of **Containers** (Tabs) and **Widgets**.
+
+    ### Hierarchy:
+    1. **Containers**: Top-level groupings displayed as tabs (e.g., "Personal Info", "Preferences").
+    2. **Widgets**: Input elements that MUST belong to a specific Container via \`containerId\`.
 
     ### Guidelines:
-    1. **Analyze the Context**: Determine what information is missing.
-    2. **Choose Widgets**: Use 'text_input', 'textarea', 'radio_group', 'checkbox_group', 'slider', or 'toggle'.
-    3. **Be Efficient**: 2-4 relevant widgets per turn.
-    4. **Variable Keys**: Use descriptive keys (e.g., 'hero_name').
+    1. **Analyze Context**: Look at the [Current State] to see existing containers and widgets.
+    2. **Modify State**: Generate ACTIONS to modify the UI.
 
-    ### Interaction Flow:
-    - **Generating Interfaces**: If you need information, generate a 'message' (context) and a list of 'widgets'.
-    - **Processing Responses**:
-      - The user may respond with a JSON block labeled "[Form Submission]" containing the widgets you previously sent, but now populated with a "response" field.
-      - Parse this JSON to understand the user's choices.
-      - **Do not** simply repeat the data back. Acknowledge it in your next 'message' and either generate the *next* set of widgets (if more info is needed) or finalize the task.
+    ### Action Types:
+    - **ADD_CONTAINER**: Create a new tab.
+    - **UPDATE_CONTAINER**: Change a tab's label.
+    - **DELETE_CONTAINER**: Remove a tab (and implies removing its widgets).
+    - **ADD_WIDGET**: Create a widget. **CRITICAL**: \`containerId\` must match an existing container's ID.
+    - **UPDATE_WIDGET**: Update a widget's props.
+    - **DELETE_WIDGET**: Remove a specific widget.
 
-    ### Final Output:
-    - If the task is complete, provide the final result in the 'message' field with \`widgets: []\`.
+    ### Logic:
+    - If starting a new task, first **ADD_CONTAINER**, then **ADD_WIDGET**s linked to it.
+    - Group related fields into separate containers (e.g., "Settings" vs "Profile").
+    - If the user provides data, acknowledge it (no action needed unless updating the UI structure).
   `;
 
   const result = streamObject({
@@ -74,44 +79,49 @@ export async function POST(req: Request) {
   return result.toTextStreamResponse();
 }
 // app/page.tsx
-// app/page.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { experimental_useObject as useObject } from "@ai-sdk/react";
-import { ChatResponseSchema, Widget } from "@/lib/schemas";
-import { Send, Bot, User, Loader2 } from "lucide-react";
+import {
+  ChatResponseSchema,
+  Widget,
+  Container,
+  WidgetAction,
+} from "@/lib/schemas";
+import { Send, Bot, User, Loader2, Trash2, Layout } from "lucide-react";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 
-// Utility to generate IDs safely
 function generateId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+  if (typeof crypto !== "undefined" && crypto.randomUUID)
     return crypto.randomUUID();
-  }
-  return `msg_${new Date().getTime()}_${Math.random().toString(36).slice(2)}`;
+  return `msg_${Date.now()}`;
 }
 
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  widgets?: Widget[];
-  isFormSubmitted?: boolean;
-  // New property to control UI visibility
-  isHidden?: boolean;
 };
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [tempStreamValues, setTempStreamValues] = useState<Record<string, any>>(
-    {},
-  );
+
+  // --- GLOBAL STATE ---
+  const [containers, setContainers] = useState<Container[]>([]);
+  const [widgets, setWidgets] = useState<Widget[]>([]);
+
+  // UI State
+  const [activeTab, setActiveTab] = useState<string>("");
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -122,271 +132,289 @@ export default function ChatPage() {
     api: "/api/query",
     schema: ChatResponseSchema,
     onFinish: ({ object }) => {
-      if (object) {
-        // Hydrate widgets with temp values
-        const hydratedWidgets = (object.widgets || []).map((w: any) => ({
-          ...w,
-          response: tempStreamValues[w.key],
-        })) as Widget[];
-
-        const newMessage: Message = {
-          id: generateId(),
-          role: "assistant",
-          content: object.message,
-          widgets: hydratedWidgets,
-        };
-        setMessages((prev) => [...prev, newMessage]);
-        setTempStreamValues({});
+      if (object && object.actions) {
+        setMessages((prev) => [
+          ...prev,
+          { id: generateId(), role: "assistant", content: object.message },
+        ]);
+        applyActions(object.actions);
       }
     },
     onError: (err) => console.error(err),
   });
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, partialObject, isLoading]);
+  // --- REDUCER ---
+  const applyActions = (actions: WidgetAction[]) => {
+    let newContainers = [...containers];
+    let newWidgets = [...widgets];
 
-  // --- 1. Text Input (Standard Chat) ---
+    actions.forEach((action) => {
+      switch (action.type) {
+        // --- CONTAINER ACTIONS ---
+        case "ADD_CONTAINER":
+          if (
+            action.container &&
+            !newContainers.find((c) => c.id === action.container!.id)
+          ) {
+            newContainers.push(action.container);
+            // If it's the first container, set it as active
+            if (newContainers.length === 1) setActiveTab(action.container.id);
+          }
+          break;
+        case "UPDATE_CONTAINER":
+          if (action.container) {
+            newContainers = newContainers.map((c) =>
+              c.id === action.container!.id ? { ...c, ...action.container } : c,
+            );
+          }
+          break;
+        case "DELETE_CONTAINER":
+          if (action.targetId) {
+            newContainers = newContainers.filter(
+              (c) => c.id !== action.targetId,
+            );
+            // Cascade delete widgets
+            newWidgets = newWidgets.filter(
+              (w) => w.containerId !== action.targetId,
+            );
+            // Reset active tab if needed
+            if (activeTab === action.targetId) {
+              setActiveTab(newContainers[0]?.id || "");
+            }
+          }
+          break;
+
+        // --- WIDGET ACTIONS ---
+        case "ADD_WIDGET":
+          if (action.widget) {
+            // Ensure unique key
+            if (!newWidgets.find((w) => w.key === action.widget!.key)) {
+              newWidgets.push({ ...action.widget, response: null });
+            }
+          }
+          break;
+        case "UPDATE_WIDGET":
+          if (action.widget) {
+            newWidgets = newWidgets.map((w) =>
+              w.key === action.widget!.key
+                ? { ...action.widget!, response: w.response } // preserve value
+                : w,
+            );
+          }
+          break;
+        case "DELETE_WIDGET":
+          if (action.targetId) {
+            newWidgets = newWidgets.filter((w) => w.key !== action.targetId);
+          }
+          break;
+      }
+    });
+
+    setContainers(newContainers);
+    setWidgets(newWidgets);
+
+    // Auto-select tab if active tab became invalid but we have containers
+    if (
+      newContainers.length > 0 &&
+      !newContainers.find((c) => c.id === activeTab)
+    ) {
+      setActiveTab(newContainers[0].id);
+    }
+  };
+
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
   const handleTextSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    setTempStreamValues({});
-
-    const userMsg: Message = {
-      id: generateId(),
-      role: "user",
-      content: input,
-      isHidden: false, // Visible
-    };
-
-    const newHistory = [...messages, userMsg];
+    const newHistory: Message[] = [
+      ...messages,
+      { id: generateId(), role: "user", content: input },
+    ];
     setMessages(newHistory);
     setInput("");
 
-    submit({
-      messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
-    });
-  };
-
-  const updateMessageWidget = (
-    messageId: string,
-    widgetKey: string,
-    newValue: any,
-  ) => {
-    setMessages((prev) =>
-      prev.map((msg) => {
-        if (msg.id !== messageId || !msg.widgets) return msg;
-        return {
-          ...msg,
-          widgets: msg.widgets.map((w) =>
-            w.key === widgetKey ? { ...w, response: newValue } : w,
-          ),
-        };
-      }),
-    );
-  };
-
-  // --- 2. Widget Submission (Hidden Data) ---
-  const handleWidgetSubmit = (messageId: string, widgets: Widget[]) => {
-    // Lock the form UI
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId ? { ...msg, isFormSubmitted: true } : msg,
-      ),
-    );
-
-    // Prepare JSON payload
-    const payload = JSON.stringify(widgets, null, 2);
-    const content = `[Form Submission]\n\`\`\`json\n${payload}\n\`\`\``;
-
-    const userMsg: Message = {
-      id: generateId(),
-      role: "user",
-      content: content,
-      isHidden: true, // HIDDEN from UI, but sent to LLM
+    // --- CONTEXT INJECTION ---
+    const currentState = {
+      containers: containers,
+      widgets: widgets.map((w) => ({
+        key: w.key,
+        containerId: w.containerId,
+        type: w.type,
+        label: w.label,
+        current_value: w.response,
+      })),
     };
 
-    const newHistory = [...messages, userMsg];
-    setMessages(newHistory);
+    const apiMessages = newHistory.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    apiMessages[apiMessages.length - 1].content +=
+      `\n\n[Current State]:\n\`\`\`json\n${JSON.stringify(currentState)}\n\`\`\``;
 
-    // Send ALL messages to the API (the mapper filters out custom props like isHidden)
-    submit({
-      messages: newHistory.map((m) => ({ role: m.role, content: m.content })),
-    });
+    submit({ messages: apiMessages });
+  };
+
+  const handleWidgetChange = (key: string, val: any) => {
+    setWidgets((prev) =>
+      prev.map((w) => (w.key === key ? { ...w, response: val } : w)),
+    );
+  };
+
+  const handleClear = () => {
+    setContainers([]);
+    setWidgets([]);
+    setActiveTab("");
   };
 
   return (
-    <div className="flex h-screen w-full flex-col bg-slate-50 dark:bg-zinc-950">
-      <header className="flex h-14 items-center border-b bg-white px-6 dark:bg-zinc-900">
-        <h1 className="text-lg font-semibold">Generative UI Chat</h1>
-      </header>
-
-      <ScrollArea className="flex-1 p-4">
-        <div className="mx-auto max-w-3xl space-y-6 pb-12">
-          {messages.length === 0 && !isLoading && (
-            <div className="flex flex-col items-center justify-center pt-24 text-center text-muted-foreground">
-              <Bot className="mb-4 h-12 w-12 opacity-20" />
-              <p>Describe a task (e.g., "Help me design a character")</p>
-            </div>
-          )}
-
-          {/* History Messages */}
-          {messages.map((msg) => {
-            // SKIP RENDER IF HIDDEN
-            if (msg.isHidden) return null;
-
-            return (
+    <div className="flex h-screen w-full flex-col bg-slate-50 dark:bg-zinc-950 md:flex-row">
+      {/* LEFT: Chat */}
+      <div className="flex flex-col h-full w-full md:w-1/2 border-r bg-white dark:bg-zinc-900">
+        <header className="flex h-14 items-center border-b px-6">
+          <h1 className="text-lg font-semibold">Builder Chat</h1>
+        </header>
+        <ScrollArea className="flex-1 p-4">
+          <div className="space-y-6 pb-4">
+            {messages.length === 0 && (
+              <div className="text-center text-muted-foreground pt-10">
+                <p>
+                  Ask me to build a form (e.g., "Create a user profile form")
+                </p>
+              </div>
+            )}
+            {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex gap-3 ${
-                  msg.role === "user" ? "flex-row-reverse" : "flex-row"
-                }`}
+                className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
               >
                 <Avatar className="h-8 w-8">
-                  {msg.role === "assistant" ? (
-                    <>
-                      <AvatarImage src="/bot-avatar.png" />
-                      <AvatarFallback className="bg-blue-600 text-white">
-                        <Bot size={16} />
-                      </AvatarFallback>
-                    </>
-                  ) : (
-                    <>
-                      <AvatarImage src="/user-avatar.png" />
-                      <AvatarFallback className="bg-zinc-800 text-white">
-                        <User size={16} />
-                      </AvatarFallback>
-                    </>
-                  )}
-                </Avatar>
-
-                <div className={`flex flex-col max-w-[80%] gap-2`}>
-                  {msg.content && (
-                    <div
-                      className={`rounded-lg px-4 py-2 text-sm shadow-sm ${
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-white dark:bg-zinc-900 border"
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    </div>
-                  )}
-
-                  {msg.role === "assistant" &&
-                    msg.widgets &&
-                    msg.widgets.length > 0 && (
-                      <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
-                        <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
-                          Interactive Interface
-                        </div>
-                        <div className="space-y-6 p-4">
-                          {msg.widgets.map((widget) => (
-                            <WidgetRenderer
-                              key={widget.key}
-                              widget={widget}
-                              value={widget.response}
-                              disabled={!!msg.isFormSubmitted || isLoading}
-                              onChange={(val) =>
-                                updateMessageWidget(msg.id, widget.key, val)
-                              }
-                            />
-                          ))}
-                          {!msg.isFormSubmitted && (
-                            <Button
-                              className="w-full"
-                              onClick={() =>
-                                handleWidgetSubmit(msg.id, msg.widgets!)
-                              }
-                              disabled={isLoading}
-                            >
-                              Submit Responses
-                            </Button>
-                          )}
-                          {msg.isFormSubmitted && (
-                            <div className="text-center text-xs text-muted-foreground italic">
-                              Responses submitted
-                            </div>
-                          )}
-                        </div>
-                      </Card>
+                  <AvatarFallback>
+                    {msg.role === "assistant" ? (
+                      <Bot size={16} />
+                    ) : (
+                      <User size={16} />
                     )}
+                  </AvatarFallback>
+                </Avatar>
+                <div
+                  className={`rounded-lg px-4 py-2 text-sm max-w-[85%] ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-slate-100 dark:bg-zinc-800"}`}
+                >
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
                 </div>
               </div>
-            );
-          })}
-
-          {/* Streaming Response */}
-          {isLoading && (
-            <div className="flex gap-3">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-blue-600 text-white">
-                  <Bot size={16} />
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col max-w-[80%] gap-2">
-                {partialObject?.message && (
-                  <div className="rounded-lg border bg-white px-4 py-2 text-sm shadow-sm dark:bg-zinc-900">
-                    <p className="whitespace-pre-wrap">
-                      {partialObject.message}
-                    </p>
-                  </div>
-                )}
-                {partialObject?.widgets && partialObject.widgets.length > 0 && (
-                  <Card className="mt-2 w-full min-w-[300px] overflow-hidden border-2 border-blue-100 dark:border-blue-900/30">
-                    <div className="bg-blue-50/50 px-4 py-2 text-xs font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 flex items-center gap-2">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      Generating Interface...
-                    </div>
-                    <div className="space-y-6 p-4">
-                      {partialObject.widgets.map((widget: any, idx) =>
-                        widget?.type && widget?.key ? (
-                          <WidgetRenderer
-                            key={idx}
-                            widget={widget}
-                            value={tempStreamValues[widget.key]}
-                            onChange={(val) =>
-                              setTempStreamValues((prev) => ({
-                                ...prev,
-                                [widget.key]: val,
-                              }))
-                            }
-                          />
-                        ) : null,
-                      )}
-                    </div>
-                  </Card>
-                )}
+            ))}
+            {isLoading && (
+              <div className="flex gap-3 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Processing actions...</span>
               </div>
-            </div>
-          )}
-          <div ref={scrollRef} />
+            )}
+            <div ref={scrollRef} />
+          </div>
+        </ScrollArea>
+        <div className="p-4 border-t">
+          <form onSubmit={handleTextSubmit} className="flex gap-2">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type a message..."
+              disabled={isLoading}
+            />
+            <Button type="submit" size="icon" disabled={isLoading}>
+              <Send className="h-4 w-4" />
+            </Button>
+          </form>
         </div>
-      </ScrollArea>
+      </div>
 
-      <div className="p-4 bg-white dark:bg-zinc-900 border-t">
-        <form
-          onSubmit={handleTextSubmit}
-          className="mx-auto flex max-w-3xl items-center gap-2"
-        >
-          <Input
-            placeholder="Send a message..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={isLoading}
-            className="flex-1"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={isLoading || !input.trim()}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </form>
+      {/* RIGHT: Tabbed Interface */}
+      <div className="flex flex-col h-full w-full md:w-1/2 bg-slate-50 dark:bg-zinc-950">
+        <header className="flex h-14 items-center justify-between border-b bg-white px-6 dark:bg-zinc-900">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">App Preview</h2>
+            <Badge variant="secondary">{containers.length} Tabs</Badge>
+          </div>
+          {containers.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClear}
+              className="text-red-500"
+            >
+              <Trash2 className="h-4 w-4 mr-2" /> Reset
+            </Button>
+          )}
+        </header>
+
+        <div className="flex-1 p-6 overflow-hidden">
+          {containers.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg">
+              <Layout className="mb-4 h-10 w-10 opacity-20" />
+              <p>No active interface</p>
+            </div>
+          ) : (
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="h-full flex flex-col"
+            >
+              <TabsList className="w-full justify-start overflow-x-auto">
+                {containers.map((c) => (
+                  <TabsTrigger key={c.id} value={c.id}>
+                    {c.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              <div className="flex-1 mt-4 overflow-hidden">
+                <ScrollArea className="h-full pr-4">
+                  {containers.map((container) => (
+                    <TabsContent
+                      key={container.id}
+                      value={container.id}
+                      className="mt-0 space-y-4"
+                    >
+                      {container.description && (
+                        <p className="text-sm text-muted-foreground mb-4">
+                          {container.description}
+                        </p>
+                      )}
+
+                      {widgets.filter((w) => w.containerId === container.id)
+                        .length === 0 ? (
+                        <div className="text-sm text-muted-foreground italic p-4 text-center">
+                          Empty container
+                        </div>
+                      ) : (
+                        widgets
+                          .filter((w) => w.containerId === container.id)
+                          .map((widget) => (
+                            <Card key={widget.key}>
+                              <CardContent className="p-6">
+                                <WidgetRenderer
+                                  widget={widget}
+                                  value={widget.response}
+                                  onChange={(val) =>
+                                    handleWidgetChange(widget.key, val)
+                                  }
+                                  disabled={isLoading}
+                                />
+                              </CardContent>
+                            </Card>
+                          ))
+                      )}
+                    </TabsContent>
+                  ))}
+                </ScrollArea>
+              </div>
+            </Tabs>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -433,12 +461,6 @@ const schema: AppSchema = _schema;
 
 export type { AppSchema };
 export default schema;
-// state/page.tsx
-const Page = () => {
-  return <></>;
-};
-
-export default Page;
 // components/WidgetRenderer.tsx
 "use client";
 
@@ -713,7 +735,10 @@ import { z } from "zod";
 
 // --- Primitives ---
 const WidgetBase = z.object({
-  key: z.string().describe("The variable name (e.g., 'user_age')."),
+  key: z.string().describe("The unique ID/variable name."),
+  containerId: z
+    .string()
+    .describe("The ID of the container this widget belongs to."), // NEW
   label: z.string().describe("The label for the input."),
   description: z.string().optional(),
 });
@@ -723,7 +748,7 @@ const OptionSchema = z.object({
   value: z.string(),
 });
 
-// --- Widget Types ---
+// --- Widget Types (Unchanged logic, just ensure they extend WidgetBase) ---
 export const TextInputSchema = WidgetBase.extend({
   type: z.literal("text_input"),
   placeholder: z.string().optional(),
@@ -775,7 +800,6 @@ export const SliderSchema = WidgetBase.extend({
     .optional(),
 });
 
-// --- Union ---
 export const WidgetSchema = z.discriminatedUnion("type", [
   TextInputSchema,
   TextAreaSchema,
@@ -787,17 +811,52 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   SliderSchema,
 ]);
 
-export const ChatResponseSchema = z.object({
-  message: z.string(),
-  widgets: z.array(WidgetSchema).optional().nullable(),
+// --- NEW: Container Schema ---
+export const ContainerSchema = z.object({
+  id: z
+    .string()
+    .describe("Unique ID for the container (e.g., 'personal_info')"),
+  label: z.string().describe("The display label for the tab"),
+  description: z.string().optional(),
 });
 
-// export type Widget = z.infer<typeof WidgetSchema>;
+// --- Actions Schema ---
+// We now support actions for both Containers and Widgets
+
+export const ActionTypeSchema = z.enum([
+  "ADD_CONTAINER",
+  "UPDATE_CONTAINER",
+  "DELETE_CONTAINER",
+  "ADD_WIDGET",
+  "UPDATE_WIDGET",
+  "DELETE_WIDGET",
+]);
+
+export const WidgetActionSchema = z.object({
+  type: ActionTypeSchema,
+
+  // For Widget Actions
+  widget: WidgetSchema.optional(),
+
+  // For Container Actions
+  container: ContainerSchema.optional(),
+
+  // For DELETE actions (needs key or containerId)
+  targetId: z
+    .string()
+    .optional()
+    .describe(" The widget key or container ID to delete"),
+});
+
+export const ChatResponseSchema = z.object({
+  message: z.string(),
+  actions: z.array(WidgetActionSchema).optional(),
+});
 
 type BaseWidget = z.infer<typeof WidgetSchema>;
-
-// 2. Export a type that includes the UI-only 'response' field
-// We use Omit/Intersection to ensure TS knows 'response' exists on your widgets
 export type Widget = BaseWidget & {
   response?: any;
 };
+
+export type Container = z.infer<typeof ContainerSchema>;
+export type WidgetAction = z.infer<typeof WidgetActionSchema>;

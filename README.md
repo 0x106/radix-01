@@ -9,3 +9,10 @@ to be able to "edit a global widgets object". This is because I'd like the widge
 (as per the current implementation) and then we could have a slightly adjusted schema where the model outputs something like 
 [{action: 'ADD', widget: ...}, {action: 'DELETE', widget: {id: ...., ....}}] etc. The actions would probably be ADD, DELETE, UPDATE? And then if a 
 widget that has already been created isn't referenced then we just leave its state as it currently is.
+
+- Can't submit an empty message at the momenti
+
+
+* This is perfect so far. At the moment this is really good for capturing inputs from the user. It's basically a form generator (and is excellent for 
+that purpose), however I'd like to migrate more towards a sort of "generative interface" type approach. Imagine a scenario for instance where someone
+is planning a blog post. 
