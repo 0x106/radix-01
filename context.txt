@@ -172,30 +172,90 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
-  const systemPrompt = `
-    You are an Interface Generator Agent.
-    You manage a **Global State** of Containers and Widgets.
+  const systemPrompt = `You are Radix, an Interface Generator Agent.
 
-    ### Core Concept: Collaborative State
-    - Both YOU and the USER can modify the \`value\` of a widget.
-    - If the user asks you to write something (e.g., "Draft a cover letter"), send an **UPDATE_WIDGET** action with the text inside the \`value\` field.
-    - If the user provides data (e.g., "Change my age to 25"), send an **UPDATE_WIDGET** action updating the \`value\`.
+  Your job is to turn conversation into **persistent, structured UI**, not long-form text.
+  Text is for explanation; UI is for the actual work.
 
-    ### Hierarchy:
-    1. **Containers**: Tabs (ID, Label).
-    2. **Widgets**: Inputs linked to a container via \`containerId\`.
+  You maintain a **Global State** composed of Containers and Widgets.
+  This state persists across turns and should be incrementally refined, not recreated.
 
-    ### Action Types:
-    - **ADD_CONTAINER** / **UPDATE_CONTAINER** / **DELETE_CONTAINER**
-    - **ADD_WIDGET**: Create a widget. You can pre-fill \`value\` if you have the data.
-    - **UPDATE_WIDGET**: Update props AND/OR the \`value\`.
-      - *Example*: \`{ type: "UPDATE_WIDGET", widget: { key: "bio", value: "New text..." } }\`
-    - **DELETE_WIDGET**: Remove a widget.
+  ---
 
-    ### Rules:
-    - When updating, only include the fields you want to change (plus the required keys/ids), but the schema requires the full object shape for safety, so ensure you merge logically.
-    - Check the [Current State] carefully before acting.
-  `;
+  ## Mental Model
+
+  - Treat the conversation as a **workspace**, not a transcript.
+  - Prefer creating or updating UI whenever the user is working with:
+    - structured information
+    - drafts, plans, or artifacts
+    - things they may want to revise later
+  - Avoid regenerating from scratch if an existing widget can be updated.
+
+  ---
+
+  ## Collaborative State Rules
+
+  - Both YOU and the USER can modify widget values.
+  - If the user asks you to *write*, *draft*, or *produce* content:
+    → Update or create a widget and put the content in its 'value'.
+  - If the user asks to *change*, *refine*, or *adjust* something:
+    → Locate the relevant widget and issue an UPDATE_WIDGET action.
+  - Do NOT restate large content blocks in chat if they already live in a widget.
+
+  ---
+
+  ## Hierarchy
+
+  1. **Containers**
+     - Represent high-level groupings (tabs, sections, work areas)
+     - Identified by 'id' and 'label'
+
+  2. **Widgets**
+     - Live inside containers via 'containerId'
+     - Hold the actual working content in 'value'
+     - May represent text, forms, lists, tables, etc.
+
+  ---
+
+  ## Action Types
+
+  - **ADD_CONTAINER**
+  - **UPDATE_CONTAINER**
+  - **DELETE_CONTAINER**
+
+  - **ADD_WIDGET**
+    - Create a new widget when a new artifact is needed
+    - Pre-fill 'value' if sufficient information exists
+
+  - **UPDATE_WIDGET**
+    - Modify an existing widget’s 'value' and/or properties
+    - Use this for edits, refinements, and continuation
+    - Example:
+      '{ type: "UPDATE_WIDGET", widget: { key: "bio", value: "Updated text..." } }'
+
+  - **DELETE_WIDGET**
+
+  ---
+
+  ## Update Discipline
+
+  - Always check the **Current State** before acting.
+  - Prefer UPDATE over ADD when possible.
+  - Only change what is necessary.
+  - When updating, include only the fields you intend to modify
+    (while logically merging with the existing object).
+
+  ---
+
+  ## Output Rules
+
+  - If a change to state is required, emit the appropriate ACTION.
+  - If no UI change is needed, respond briefly in text.
+  - Never duplicate widget content verbatim in chat.
+  - Optimize for clarity, continuity, and editability over verbosity.
+
+  Your success is measured by whether the workspace becomes
+  more useful, structured, and easier to refine over time.`;
 
   const result = streamObject({
     model: openai("gpt-5.2"),
@@ -207,7 +267,6 @@ export async function POST(req: Request) {
   return result.toTextStreamResponse();
 }
 // app/page.tsx
-// app/page.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -217,7 +276,19 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, ArrowRight, Rocket, ChevronRight } from "lucide-react";
+import {
+  Loader2,
+  Rocket,
+  ChevronRight,
+  LayoutDashboard,
+  FormInput,
+  Trello,
+  Settings,
+  CheckSquare,
+  Columns,
+  Command,
+  NotebookText,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
@@ -238,9 +309,57 @@ interface LocalWidget extends Widget {
   id: string; // We need a fake ID for local react keys
 }
 
+const EXAMPLES = [
+  {
+    label: "Feedback Form (Iterative)",
+    prompt:
+      "Create a customer feedback form. Start simple, and I’ll refine the questions as we go.",
+    icon: FormInput,
+  },
+  {
+    label: "Planning Workspace",
+    prompt:
+      "Help me plan a product launch. I want a structured workspace I can update as ideas change.",
+    icon: LayoutDashboard,
+  },
+  {
+    label: "Prompt Builder",
+    prompt:
+      "Build a prompt template I can iteratively improve and reuse for different tasks.",
+    icon: Command,
+  },
+  {
+    label: "Comparison Table",
+    prompt:
+      "Create a comparison table so I can evaluate a few options side by side and adjust criteria.",
+    icon: Columns,
+  },
+  {
+    label: "Project Breakdown",
+    prompt:
+      "Break this project into phases and tasks, and let me reorganize it as we discuss.",
+    icon: Trello,
+  },
+  {
+    label: "User Research Notes",
+    prompt:
+      "Create a structured place to capture and refine user research notes from interviews.",
+    icon: NotebookText,
+  },
+  // {
+  //   label: "Decision Log",
+  //   prompt:
+  //     "Create a decision log where I can track options, tradeoffs, and final choices over time.",
+  //   icon: CheckSquare,
+  // },
+];
+
 export default function LandingPage() {
   const router = useRouter();
   const { user } = db.useAuth();
+
+  // --- UI STATE ---
+  const [hasStarted, setHasStarted] = useState(false);
 
   // --- AUTH STATE ---
   const [sentEmail, setSentEmail] = useState("");
@@ -271,22 +390,12 @@ export default function LandingPage() {
   ]);
   const [activeTab, setActiveTab] = useState("stream");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // --- AUTH HANDLERS ---
   useEffect(() => {
-    // If user is already logged in, redirect to their last conversation or a new one
-    // But for the purpose of the landing page design, we might want to stay here
-    // until they explicitly click "Enter Workspace".
-    // For now, let's auto-redirect if they visit root while logged in.
     if (user) {
-      // Simple check to find a conversation or create one
-      const fetchRecent = async () => {
-        // Logic to redirect handled inside Sidebar/Home usually,
-        // but here we just push to a new conv to be safe or dashboard
-        // For this demo, let's just let them be on the landing page
-        // but show "Enter" instead of "Sign In".
-      };
-      fetchRecent();
+      // Logic to redirect if needed
     }
   }, [user]);
 
@@ -308,7 +417,6 @@ export default function LandingPage() {
     setIsAuthLoading(true);
     try {
       await db.auth.signInWithMagicCode({ email: sentEmail, code });
-      // AuthGuard will handle redirect or layout change once user is detected
       router.refresh();
     } catch (error: any) {
       alert(`Error: ${error.message}`);
@@ -327,19 +435,16 @@ export default function LandingPage() {
     onFinish: ({ object }) => {
       if (!object) return;
 
-      // 1. Convert the final message to a static widget
       if (object.message) {
         addTextWidget(object.message, "assistant");
       }
 
-      // 2. Execute actions
       if (object.actions) {
         object.actions.forEach((action) => applyAction(action));
       }
     },
   });
 
-  // Helper to add chat bubbles as widgets
   const addTextWidget = (text: string, variant: "user" | "assistant") => {
     const newWidget: LocalWidget = {
       id: Math.random().toString(36).substring(7),
@@ -348,13 +453,12 @@ export default function LandingPage() {
       type: "text_display",
       label: "Message",
       value: text,
-      variant: variant, // Using the prop we added to schema
+      variant: variant,
     } as any;
 
     setWidgets((prev) => [...prev, newWidget]);
   };
 
-  // Local State Reducer for AI Actions
   const applyAction = (action: WidgetAction) => {
     switch (action.type) {
       case "ADD_CONTAINER":
@@ -363,7 +467,6 @@ export default function LandingPage() {
             if (prev.find((c) => c.id === action.container!.id)) return prev;
             return [...prev, action.container!];
           });
-          // Switch to new tab automatically if it's not the stream
           if (action.container.id !== "stream")
             setActiveTab(action.container.id);
         }
@@ -371,10 +474,8 @@ export default function LandingPage() {
       case "ADD_WIDGET":
         if (action.widget) {
           const w = action.widget;
-          // If no container specified, dump in active tab or stream
           const targetContainer = w.containerId || "stream";
           setWidgets((prev) => {
-            // remove if key exists to avoid dupes in this simple playground
             const filtered = prev.filter((pw) => pw.key !== w.key);
             return [
               ...filtered,
@@ -388,7 +489,6 @@ export default function LandingPage() {
         }
         break;
       case "UPDATE_WIDGET":
-        // Simplified local update
         if (action.widget) {
           setWidgets((prev) =>
             prev.map((w) =>
@@ -406,14 +506,13 @@ export default function LandingPage() {
     e?.preventDefault();
     if (!input.trim() || isAiLoading) return;
 
+    if (!hasStarted) setHasStarted(true);
+
     const userText = input;
     setInput("");
 
-    // 1. Add User Widget immediately
     addTextWidget(userText, "user");
 
-    // 2. Construct history for AI
-    // We only send the text content, not the full widget structure, to save tokens/complexity
     const history = widgets
       .filter((w) => w.type === "text_display")
       .map((w) => ({
@@ -421,7 +520,6 @@ export default function LandingPage() {
         content: String(w.value || ""),
       }));
 
-    // 3. Construct Current State Context
     const currentState = {
       containers: containers.map((c) => ({ id: c.id, label: c.label })),
       widgets: widgets
@@ -450,39 +548,34 @@ export default function LandingPage() {
   // Scroll to bottom of stream
   useEffect(() => {
     if (activeTab === "stream" && scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+      // scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [widgets, activeTab, partialObject]);
+  }, [widgets, activeTab, partialObject, hasStarted]);
 
   // --- RENDER ---
   return (
-    <div className="min-h-screen w-full  flex items-center justify-center font-sans">
-      {/* Main Card */}
-      {/*border border-slate-900 rounded-lg shadow-2xl bg-slate-50 p-4*/}
-      <div className="w-full h-full bg-white   overflow-hidden flex flex-col md:flex-row  relative">
+    <div className="min-h-screen w-full flex items-center justify-center font-sans bg-white dark:bg-black">
+      <div className="w-full h-full overflow-hidden flex flex-col md:flex-row relative">
         {/* --- LEFT PANEL (Auth & Brand) --- */}
-        {/*shadow-2xl m-2 rounded-lg h-min bottom-0 absolute*/}
-        <div className="w-100 flex flex-col p-8 md:p-10 shrink-0 z-10 justify-end border-r border-slate-200">
+        <div className="w-full md:w-[400px] flex flex-col p-8 md:p-10 shrink-0 z-10 justify-end border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-black h-screen md:h-auto">
           <div>
             <div className="space-y-4 mb-12">
-              <div>
-                <div className="flex flex-row gap-2">
-                  <div className="h-8 w-8 relative">
-                    <Image
-                      src={Icon}
-                      alt="Radix Logo"
-                      fill
-                      className="object-contain"
-                    />
-                  </div>
-                  <h1 className="text-3xl font-bold tracking-tighter text-slate-900 mb-1 uppercase">
-                    RADIX
-                  </h1>
+              <div className="flex flex-row gap-2 items-center">
+                <div className="h-8 w-8 relative">
+                  <Image
+                    src={Icon}
+                    alt="Radix Logo"
+                    fill
+                    className="object-contain"
+                  />
                 </div>
-                <p className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                  Generative AI Workspaces
-                </p>
+                <h1 className="text-3xl font-bold tracking-tighter text-slate-900 dark:text-white mb-1 uppercase">
+                  RADIX
+                </h1>
               </div>
+              <p className="text-xs font-mono uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                Generative AI Workspaces
+              </p>
             </div>
 
             <div className="flex-1 flex flex-col justify-center max-w-[320px]">
@@ -495,14 +588,14 @@ export default function LandingPage() {
                         placeholder="hello@example.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="h-12 border-slate-300 focus-visible:ring-slate-900 rounded-md bg-transparent"
+                        className="h-12 border-slate-300 dark:border-zinc-700 focus-visible:ring-slate-900 rounded-md bg-transparent"
                         required
                         disabled={isAuthLoading}
                       />
                     </div>
                     <Button
                       type="submit"
-                      className="w-full h-12 bg-slate-900 text-white hover:bg-slate-800 rounded-md"
+                      className="w-full h-12 bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 rounded-md"
                       disabled={isAuthLoading}
                     >
                       {isAuthLoading ? (
@@ -521,13 +614,13 @@ export default function LandingPage() {
                   >
                     <div className="space-y-2">
                       <div className="flex justify-between items-baseline">
-                        <label className="text-sm font-medium">
+                        <label className="text-sm font-medium dark:text-slate-200">
                           Magic Code
                         </label>
                         <button
                           type="button"
                           onClick={() => setSentEmail("")}
-                          className="text-xs text-slate-400 hover:text-slate-900"
+                          className="text-xs text-slate-400 hover:text-slate-900 dark:hover:text-white"
                         >
                           Change email
                         </button>
@@ -536,7 +629,7 @@ export default function LandingPage() {
                         placeholder="123456"
                         value={code}
                         onChange={(e) => setCode(e.target.value)}
-                        className="h-12 border-slate-300 text-center text-lg tracking-[0.5em] font-mono rounded-md"
+                        className="h-12 border-slate-300 dark:border-zinc-700 text-center text-lg tracking-[0.5em] font-mono rounded-md"
                         autoFocus
                         required
                         disabled={isAuthLoading}
@@ -560,9 +653,13 @@ export default function LandingPage() {
                 )
               ) : (
                 <div className="space-y-4">
-                  <div className="p-4 bg-slate-50 rounded-md border border-slate-100 ">
-                    <p className="text-sm text-slate-600 mb-1">Signed in as</p>
-                    <p className="font-medium truncate">{user.email}</p>
+                  <div className="p-4 bg-slate-50 dark:bg-zinc-900 rounded-md border border-slate-100 dark:border-zinc-800">
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">
+                      Signed in as
+                    </p>
+                    <p className="font-medium truncate dark:text-slate-200">
+                      {user.email}
+                    </p>
                   </div>
                   <Button
                     onClick={() => router.push("/conversation/new")}
@@ -573,7 +670,7 @@ export default function LandingPage() {
                   <Button
                     variant="ghost"
                     onClick={() => db.auth.signOut()}
-                    className="w-full text-slate-500"
+                    className="w-full text-slate-500 dark:text-slate-400"
                   >
                     Sign Out
                   </Button>
@@ -581,7 +678,7 @@ export default function LandingPage() {
               )}
             </div>
             <div className="mt-auto pt-8">
-              <p className="text-[10px] font-mono uppercase text-slate-600 flex flex-row gap-2 align-center text-center1">
+              <p className="text-[10px] font-mono uppercase text-slate-600 dark:text-slate-500 flex flex-row gap-2 align-center text-center1">
                 Built in London
                 <Rocket size={12} />
               </p>
@@ -590,131 +687,198 @@ export default function LandingPage() {
         </div>
 
         {/* --- RIGHT PANEL (Interactive Playground) --- */}
-        <div className="flex-1 flex flex-col min-w-0 relative ">
-          <Tabs
-            value={activeTab}
-            onValueChange={setActiveTab}
-            className="flex-1 flex flex-col h-full"
+        <div className="flex-1 flex flex-col min-w-0 relative h-screen">
+          {/* CONTENT AREA */}
+          <div
+            className={cn(
+              "flex-1 flex flex-col h-full transition-opacity duration-700 ease-in-out",
+              hasStarted ? "opacity-100" : "opacity-0 pointer-events-none",
+            )}
           >
-            <div className=" border-slate-200  bg-white px-4 h-14 flex items-center shrink-0">
-              <TabsList className="bg-transparent h-auto p-0 gap-6">
-                {containers.map((c) => (
-                  <TabsTrigger
-                    key={c.id}
-                    value={c.id}
-                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black  border-b-2 border-slate-300 data-[state=active]:border-b-2 data-[state=active]:border-black px-2 py-2  text-slate-500 hover:text-slate-800 transition-all font-medium text-sm rounded-md cursor-pointer"
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="flex-1 flex flex-col h-full"
+            >
+              <div className="border-slate-200 dark:border-zinc-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0">
+                <TabsList className="bg-transparent h-auto p-0 gap-6">
+                  {containers.map((c) => (
+                    <TabsTrigger
+                      key={c.id}
+                      value={c.id}
+                      className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
+                    >
+                      {c.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+
+              <div className="flex-1 relative overflow-hidden bg-[#fafafa] dark:bg-[#0c0c0c]">
+                {containers.map((container) => (
+                  <TabsContent
+                    key={container.id}
+                    value={container.id}
+                    className="h-full m-0 data-[state=inactive]:hidden"
                   >
-                    {c.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </div>
-
-            <div className="flex-1 relative overflow-hidden">
-              {containers.map((container) => (
-                <TabsContent
-                  key={container.id}
-                  value={container.id}
-                  className="h-full m-0 data-[state=inactive]:hidden"
-                >
-                  <ScrollArea className="h-full">
-                    <div className="p-8 max-w-3xl mx-auto pb-32">
-                      {/* Container Description */}
-                      {container.id !== "stream" && (
-                        <div className="mb-8 pb-6 border-b border-slate-100">
-                          <h2 className="text-2xl font-semibold mb-2">
-                            {container.label}
-                          </h2>
-                          <p className="text-slate-500">
-                            {container.description}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Render Widgets for this Container */}
-                      <div
-                        className={cn(
-                          "space-y-6",
-                          container.id === "stream" ? "space-y-4" : "",
+                    <ScrollArea className="h-full">
+                      <div className="p-8 max-w-3xl mx-auto pb-32">
+                        {container.id !== "stream" && (
+                          <div className="mb-8 pb-6 border-b border-slate-100 dark:border-zinc-800">
+                            <h2 className="text-2xl font-semibold mb-2 dark:text-white">
+                              {container.label}
+                            </h2>
+                            <p className="text-slate-500 dark:text-slate-400">
+                              {container.description}
+                            </p>
+                          </div>
                         )}
-                      >
-                        {widgets
-                          .filter((w) => w.containerId === container.id)
-                          .map((widget) => (
-                            <WidgetRenderer
-                              key={widget.id} // use local ID
-                              widget={widget}
-                              value={widget.value}
-                              onChange={(val) => {
-                                // Local update
-                                setWidgets((prev) =>
-                                  prev.map((w) =>
-                                    w.id === widget.id
-                                      ? { ...w, value: val }
-                                      : w,
-                                  ),
-                                );
-                              }}
-                              disabled={
-                                isAiLoading && widget.type !== "text_display"
-                              }
-                            />
-                          ))}
 
-                        {/* Streaming Partial Message */}
-                        {container.id === "stream" &&
-                          isAiLoading &&
-                          partialObject?.message && (
-                            <div className="flex flex-col w-full mb-4 opacity-70">
-                              <span className="text-[10px] font-mono uppercase text-[#FF5F1F] mb-1 ml-1">
-                                Thinking...
-                              </span>
-                              <div className="bg-white border border-slate-200 px-4 py-3  text-sm text-slate-600">
-                                {partialObject.message}
-                              </div>
-                            </div>
+                        <div
+                          className={cn(
+                            "space-y-6",
+                            container.id === "stream" ? "space-y-4" : "",
                           )}
-                        <div ref={scrollRef} />
-                      </div>
-                    </div>
-                  </ScrollArea>
-                </TabsContent>
-              ))}
-            </div>
-          </Tabs>
+                        >
+                          {widgets
+                            .filter((w) => w.containerId === container.id)
+                            .map((widget) => (
+                              <WidgetRenderer
+                                key={widget.id}
+                                widget={widget}
+                                value={widget.value}
+                                onChange={(val) => {
+                                  setWidgets((prev) =>
+                                    prev.map((w) =>
+                                      w.id === widget.id
+                                        ? { ...w, value: val }
+                                        : w,
+                                    ),
+                                  );
+                                }}
+                                disabled={
+                                  isAiLoading && widget.type !== "text_display"
+                                }
+                              />
+                            ))}
 
-          {/* Input Area (Floating) */}
-          <div className="absolute bottom-6 left-6 right-6 max-w-3xl mx-auto">
+                          {container.id === "stream" &&
+                            isAiLoading &&
+                            partialObject?.message && (
+                              <div className="flex flex-col w-full mb-4 opacity-70 animate-pulse">
+                                <span className="text-[10px] font-mono uppercase text-indigo-500 mb-1 ml-1">
+                                  Generating...
+                                </span>
+                                <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
+                                  {partialObject.message}
+                                </div>
+                              </div>
+                            )}
+                          {/*<div ref={scrollRef} />*/}
+                        </div>
+                      </div>
+                    </ScrollArea>
+                  </TabsContent>
+                ))}
+              </div>
+            </Tabs>
+          </div>
+
+          {/* INPUT & EXAMPLES AREA */}
+          <div
+            className={cn(
+              "absolute transition-all duration-700 ease-in-out w-full px-6",
+              hasStarted
+                ? "bottom-6 max-w-3xl left-1/2 -translate-x-1/2"
+                : "top-1/2 -translate-y-1/2 max-w-2xl left-1/2 -translate-x-1/2",
+            )}
+          >
             <div className="relative group">
-              <div className="absolute inset-0 bg-linear-to-r from-slate-500 to-black rounded-md blur opacity-10 group-hover:opacity-20 transition-opacity" />
+              <div
+                className={cn(
+                  "absolute inset-0 bg-gradient-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 transition-opacity",
+                  hasStarted ? "group-hover:opacity-30" : "opacity-40",
+                )}
+              />
               <form
                 onSubmit={handlePlaygroundSubmit}
-                className="relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-slate-800 p-1.5 rounded-md shadow-lg flex items-center gap-2 pl-4"
+                className={cn(
+                  "relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg shadow-xl flex items-center gap-2 pl-4 transition-all",
+                  hasStarted ? "p-1.5" : "p-3",
+                )}
               >
                 <Input
+                  ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Describe an interface to build..."
-                  className="flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent h-10 font-mono text-sm"
+                  placeholder={
+                    hasStarted
+                      ? "Describe an interface to build..."
+                      : "Describe an interface you want to build..."
+                  }
+                  className={cn(
+                    "flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent font-mono text-sm placeholder:text-slate-400",
+                    hasStarted ? "h-10" : "h-12 text-base",
+                  )}
                   disabled={isAiLoading}
+                  autoFocus={!hasStarted}
                 />
                 <Button
-                  size="sm"
+                  size={hasStarted ? "sm" : "default"}
                   type="submit"
                   disabled={!input.trim() || isAiLoading}
-                  className="h-9 w-9 p-0 rounded-lg bg-slate-800 hover:bg-black dark:bg-white cursor-pointer"
+                  className={cn(
+                    "rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all",
+                    hasStarted ? "h-9 w-9 p-0" : "h-12 px-6",
+                  )}
                 >
                   {isAiLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
+                  ) : hasStarted ? (
                     <ChevronRight className="h-4 w-4" />
+                  ) : (
+                    <span className="font-medium">Generate</span>
                   )}
                 </Button>
               </form>
             </div>
-            <p className="text-center text-[10px] text-slate-400 mt-3 font-medium">
-              Changes here are temporary. Sign in to save your workspace.
-            </p>
+
+            {/* Example Grid (Only shown before starting) */}
+            <div
+              className={cn(
+                "grid grid-cols-2 md:grid-cols-3 gap-3 mt-8 transition-all duration-500 delay-100",
+                hasStarted
+                  ? "opacity-0 translate-y-4 pointer-events-none absolute w-full"
+                  : "opacity-100 translate-y-0",
+              )}
+            >
+              {EXAMPLES.map((example) => (
+                <button
+                  key={example.label}
+                  onClick={() => {
+                    setInput(example.prompt);
+                    inputRef.current?.focus();
+                  }}
+                  className="flex flex-col items-start p-4 h-24 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg hover:border-slate-400 dark:hover:border-zinc-600 hover:shadow-md transition-all text-left group"
+                >
+                  <div className="flex items-center gap-2 mb-2 text-slate-500 group-hover:text-slate-900 dark:text-slate-400 dark:group-hover:text-slate-100 transition-colors">
+                    <example.icon className="h-4 w-4" />
+                    <span className="text-xs font-semibold uppercase tracking-wider">
+                      {example.label}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                    {example.prompt}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            {hasStarted && (
+              <p className="text-center text-[10px] text-slate-400 mt-3 font-medium animate-in fade-in">
+                Changes here are temporary. Sign in to save your workspace.
+              </p>
+            )}
           </div>
         </div>
       </div>
