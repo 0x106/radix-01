@@ -29,7 +29,7 @@ export default function ConversationPage({
       messages: { $: { order: { createdAt: "asc" } } },
       containers: {
         $: { order: { label: "asc" } },
-        widgets: {}, // We fetch widgets nested under containers
+        widgets: {},
       },
     },
   });
@@ -38,8 +38,6 @@ export default function ConversationPage({
   const messages = data?.conversations[0]?.messages || [];
   const containers = data?.conversations[0]?.containers || [];
 
-  // Flattening is no longer strictly necessary for rendering,
-  // but useful if we need to search across all widgets later.
   const allWidgetsFlat = containers.flatMap((c) => c.widgets);
 
   // --- UI STATE ---
@@ -62,6 +60,15 @@ export default function ConversationPage({
       const timestamp = Date.now();
       const msgId = generateId();
 
+      // Update Title if AI generated one
+      if (object.title) {
+        txs.push(
+          db.tx.conversations[conversationId].update({
+            title: object.title,
+          }),
+        );
+      }
+
       txs.push(
         db.tx.messages[msgId]
           .update({
@@ -72,7 +79,6 @@ export default function ConversationPage({
           .link({ conversation: conversationId }),
       );
 
-      // Maps to resolve temporary IDs to real DB IDs
       const containerIdMap = new Map<string, string>();
       const widgetKeyMap = new Map<string, string>();
 
@@ -149,13 +155,10 @@ export default function ConversationPage({
         if (action.widget) {
           const { key, containerId, ...updates } = action.widget;
           let targetWidgetId = widgetKeyMap.get(key);
-
-          // Fallback: look up in existing widgets if not in current transaction map
           if (!targetWidgetId) {
             const existing = allWidgetsFlat.find((w) => w.key === key);
             if (existing) targetWidgetId = existing.id;
           }
-
           if (targetWidgetId) {
             const existingWidget = allWidgetsFlat.find(
               (w) => w.id === targetWidgetId,
@@ -208,22 +211,14 @@ export default function ConversationPage({
         .link({ conversation: conversationId }),
     );
 
-    if (
-      conversation?.title === "New Conversation" ||
-      conversation?.title === "Untitled Project"
-    ) {
-      db.transact(
-        db.tx.conversations[conversationId].update({
-          title: userContent.slice(0, 30),
-        }),
-      );
-    }
+    // REMOVED: Naive title slicing.
+    // We now rely on onFinish to update the title via AI.
 
     const currentState = {
       containers: containers.map((c) => ({ id: c.id, label: c.label })),
       widgets: allWidgetsFlat.map((w) => ({
         key: w.key,
-        containerId: w.container?.id, // Note: This might be undefined in flat map unless linked, but for state prompt we mostly need key/value
+        containerId: w.container?.id,
         type: w.type,
         label: w.label,
         value: w.value,
@@ -356,7 +351,6 @@ export default function ConversationPage({
             </ScrollArea>
           </TabsContent>
 
-          {/* Generated Container Tabs */}
           {containers.map((container) => (
             <TabsContent
               key={container.id}
@@ -403,7 +397,6 @@ export default function ConversationPage({
         </div>
       </Tabs>
 
-      {/* --- Floating Input Area --- */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-6 z-30">
         <div className="relative group">
           <div className="absolute inset-0 bg-gradient-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 group-hover:opacity-30 transition-opacity" />

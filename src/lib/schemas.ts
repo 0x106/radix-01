@@ -134,6 +134,12 @@ export const WidgetActionSchema = z.object({
 export const ChatResponseSchema = z.object({
   message: z.string(),
   actions: z.array(WidgetActionSchema).optional(),
+  title: z
+    .string()
+    .optional()
+    .describe(
+      "A short, concise title for the workspace (3-5 words). Only generate this for the first turn or if the topic changes significantly.",
+    ),
 });
 
 export type Widget = z.infer<typeof WidgetSchema>;
