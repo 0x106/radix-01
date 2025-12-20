@@ -460,7 +460,7 @@ export default function LandingPage() {
                               <span className="text-[10px] font-mono uppercase text-[#FF5F1F] mb-1 ml-1">
                                 Thinking...
                               </span>
-                              <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-slate-600">
+                              <div className="bg-white border border-slate-200 px-4 py-3  text-sm text-slate-600">
                                 {partialObject.message}
                               </div>
                             </div>
@@ -477,10 +477,10 @@ export default function LandingPage() {
           {/* Input Area (Floating) */}
           <div className="absolute bottom-6 left-6 right-6 max-w-3xl mx-auto">
             <div className="relative group">
-              <div className="absolute inset-0 bg-linear-to-r from-slate-500 to-black rounded-xl blur opacity-10 group-hover:opacity-20 transition-opacity" />
+              <div className="absolute inset-0 bg-linear-to-r from-slate-500 to-black rounded-md blur opacity-10 group-hover:opacity-20 transition-opacity" />
               <form
                 onSubmit={handlePlaygroundSubmit}
-                className="relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-slate-800 p-1.5 rounded-xl shadow-lg flex items-center gap-2 pl-4"
+                className="relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-slate-800 p-1.5 rounded-md shadow-lg flex items-center gap-2 pl-4"
               >
                 <Input
                   value={input}

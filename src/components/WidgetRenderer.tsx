@@ -46,7 +46,7 @@ export function WidgetRenderer({
       if (variant === "user") {
         return (
           <div className="flex justify-end w-full mb-2">
-            <div className="bg-slate-900 text-white dark:bg-slate-100 dark:text-black px-4 py-2 rounded-2xl rounded-tr-sm text-sm max-w-[90%]">
+            <div className="bg-slate-900 text-white dark:bg-slate-100 dark:text-black px-4 py-2 rounded-lg rounded-tr-sm text-sm max-w-[90%]">
               {content}
             </div>
           </div>
@@ -58,7 +58,7 @@ export function WidgetRenderer({
           <span className="text-[10px] font-mono uppercase text-slate-400 mb-1 ml-1">
             Radix AI
           </span>
-          <div className="bg-slate-50 border border-slate-200 dark:bg-zinc-900 dark:border-zinc-800 px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+          <div className="bg-slate-50 border border-slate-200 dark:bg-zinc-900 dark:border-zinc-800 px-4 py-3 rounded-lg rounded-tl-sm text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
             {content}
           </div>
         </div>
