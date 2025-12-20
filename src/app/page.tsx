@@ -387,7 +387,7 @@ export default function LandingPage() {
             onValueChange={setActiveTab}
             className="flex-1 flex flex-col h-full"
           >
-            <div className="border-b border-slate-200  bg-white px-4 h-14 flex items-center shrink-0">
+            <div className=" border-slate-200  bg-white px-4 h-14 flex items-center shrink-0">
               <TabsList className="bg-transparent h-auto p-0 gap-6">
                 {containers.map((c) => (
                   <TabsTrigger
@@ -457,7 +457,7 @@ export default function LandingPage() {
                           isAiLoading &&
                           partialObject?.message && (
                             <div className="flex flex-col w-full mb-4 opacity-70">
-                              <span className="text-[10px] font-mono uppercase text-slate-400 mb-1 ml-1">
+                              <span className="text-[10px] font-mono uppercase text-[#FF5F1F] mb-1 ml-1">
                                 Thinking...
                               </span>
                               <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-sm text-slate-600">
@@ -493,7 +493,7 @@ export default function LandingPage() {
                   size="sm"
                   type="submit"
                   disabled={!input.trim() || isAiLoading}
-                  className="h-9 w-9 p-0 rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black"
+                  className="h-9 w-9 p-0 rounded-lg bg-slate-800 hover:bg-black dark:bg-white cursor-pointer"
                 >
                   {isAiLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
