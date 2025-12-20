@@ -102,7 +102,7 @@ export default function LandingPage() {
   const [input, setInput] = useState("");
   const [containers, setContainers] = useState<LocalContainer[]>([
     {
-      id: "stream",
+      id: "messages",
       label: "Messages",
       description: "Project history and context",
     },
@@ -111,7 +111,7 @@ export default function LandingPage() {
     {
       id: "welcome-msg",
       key: "welcome-msg",
-      containerId: "stream",
+      containerId: "messages",
       type: "text_display",
       label: "Welcome",
       value:
@@ -119,7 +119,7 @@ export default function LandingPage() {
       variant: "system",
     } as any,
   ]);
-  const [activeTab, setActiveTab] = useState("stream");
+  const [activeTab, setActiveTab] = useState("messages");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -180,7 +180,7 @@ export default function LandingPage() {
     const newWidget: LocalWidget = {
       id: Math.random().toString(36).substring(7),
       key: `msg-${Date.now()}`,
-      containerId: "stream",
+      containerId: "messages",
       type: "text_display",
       label: "Message",
       value: text,
@@ -198,14 +198,14 @@ export default function LandingPage() {
             if (prev.find((c) => c.id === action.container!.id)) return prev;
             return [...prev, action.container!];
           });
-          if (action.container.id !== "stream")
+          if (action.container.id !== "messages")
             setActiveTab(action.container.id);
         }
         break;
       case "ADD_WIDGET":
         if (action.widget) {
           const w = action.widget;
-          const targetContainer = w.containerId || "stream";
+          const targetContainer = w.containerId || "messages";
           setWidgets((prev) => {
             const filtered = prev.filter((pw) => pw.key !== w.key);
             return [
@@ -278,7 +278,7 @@ export default function LandingPage() {
 
   // Scroll to bottom of stream
   useEffect(() => {
-    if (activeTab === "stream" && scrollRef.current) {
+    if (activeTab === "messages" && scrollRef.current) {
       // scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [widgets, activeTab, partialObject, hasStarted]);
@@ -454,7 +454,7 @@ export default function LandingPage() {
                   >
                     <ScrollArea className="h-full">
                       <div className="p-8 max-w-3xl mx-auto pb-32">
-                        {container.id !== "stream" && (
+                        {container.id !== "messages" && (
                           <div className="mb-8 pb-6 border-b border-slate-100 dark:border-zinc-800">
                             <h2 className="text-2xl font-semibold mb-2 dark:text-white">
                               {container.label}
@@ -468,7 +468,7 @@ export default function LandingPage() {
                         <div
                           className={cn(
                             "space-y-6",
-                            container.id === "stream" ? "space-y-4" : "",
+                            container.id === "messages" ? "space-y-4" : "",
                           )}
                         >
                           {widgets
@@ -493,7 +493,7 @@ export default function LandingPage() {
                               />
                             ))}
 
-                          {container.id === "stream" &&
+                          {container.id === "messages" &&
                             isAiLoading &&
                             partialObject?.message && (
                               <div className="flex flex-col w-full mb-4 opacity-70 animate-pulse">

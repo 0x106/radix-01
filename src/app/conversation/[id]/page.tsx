@@ -29,7 +29,7 @@ export default function ConversationPage({
       messages: { $: { order: { createdAt: "asc" } } },
       containers: {
         $: { order: { label: "asc" } },
-        widgets: {},
+        widgets: {}, // We fetch widgets nested under containers
       },
     },
   });
@@ -37,26 +37,17 @@ export default function ConversationPage({
   const conversation = data?.conversations[0];
   const messages = data?.conversations[0]?.messages || [];
   const containers = data?.conversations[0]?.containers || [];
-  const allExistingWidgets = containers.flatMap((c) => c.widgets);
+
+  // Flattening is no longer strictly necessary for rendering,
+  // but useful if we need to search across all widgets later.
+  const allWidgetsFlat = containers.flatMap((c) => c.widgets);
 
   // --- UI STATE ---
-  const [activeTab, setActiveTab] = useState("stream");
+  const [activeTab, setActiveTab] = useState("messages");
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-switch to new containers if they are added (optional UX improvement)
-  const prevContainerCount = useRef(0);
-  useEffect(() => {
-    if (containers.length > prevContainerCount.current) {
-      // Find the new container - simplistic approach: last one
-      // In a real app, you might track the specific ID from the action
-      // setActiveTab(containers[containers.length - 1].id);
-    }
-    prevContainerCount.current = containers.length;
-  }, [containers.length]);
-
-  // --- AI STREAMING ---
   const {
     submit,
     isLoading: isAiLoading,
@@ -71,7 +62,6 @@ export default function ConversationPage({
       const timestamp = Date.now();
       const msgId = generateId();
 
-      // Save assistant message
       txs.push(
         db.tx.messages[msgId]
           .update({
@@ -82,6 +72,7 @@ export default function ConversationPage({
           .link({ conversation: conversationId }),
       );
 
+      // Maps to resolve temporary IDs to real DB IDs
       const containerIdMap = new Map<string, string>();
       const widgetKeyMap = new Map<string, string>();
 
@@ -158,12 +149,15 @@ export default function ConversationPage({
         if (action.widget) {
           const { key, containerId, ...updates } = action.widget;
           let targetWidgetId = widgetKeyMap.get(key);
+
+          // Fallback: look up in existing widgets if not in current transaction map
           if (!targetWidgetId) {
-            const existing = allExistingWidgets.find((w) => w.key === key);
+            const existing = allWidgetsFlat.find((w) => w.key === key);
             if (existing) targetWidgetId = existing.id;
           }
+
           if (targetWidgetId) {
-            const existingWidget = allExistingWidgets.find(
+            const existingWidget = allWidgetsFlat.find(
               (w) => w.id === targetWidgetId,
             );
             const currentProps = (existingWidget?.props as object) || {};
@@ -189,7 +183,7 @@ export default function ConversationPage({
         if (action.targetId) {
           let idToDelete = widgetKeyMap.get(action.targetId);
           if (!idToDelete) {
-            const existing = allExistingWidgets.find(
+            const existing = allWidgetsFlat.find(
               (w) => w.key === action.targetId,
             );
             if (existing) idToDelete = existing.id;
@@ -208,14 +202,12 @@ export default function ConversationPage({
     setInput("");
     const msgId = generateId();
 
-    // Optimistic UI: Add user message immediately
     db.transact(
       db.tx.messages[msgId]
         .update({ role: "user", content: userContent, createdAt: Date.now() })
         .link({ conversation: conversationId }),
     );
 
-    // Update title if it's new
     if (
       conversation?.title === "New Conversation" ||
       conversation?.title === "Untitled Project"
@@ -227,12 +219,11 @@ export default function ConversationPage({
       );
     }
 
-    // Build Context
     const currentState = {
       containers: containers.map((c) => ({ id: c.id, label: c.label })),
-      widgets: allExistingWidgets.map((w) => ({
+      widgets: allWidgetsFlat.map((w) => ({
         key: w.key,
-        containerId: w.container?.id,
+        containerId: w.container?.id, // Note: This might be undefined in flat map unless linked, but for state prompt we mostly need key/value
         type: w.type,
         label: w.label,
         value: w.value,
@@ -250,23 +241,18 @@ export default function ConversationPage({
     apiMessages[apiMessages.length - 1].content +=
       `\n\n[Current State]:\n\`\`\`json\n${JSON.stringify(currentState)}\n\`\`\``;
 
-    // Ensure we are viewing the stream when generating so user sees the thought process
-    // setActiveTab("stream");
-
     submit({ messages: apiMessages });
   };
 
   const handleWidgetChange = (key: string, val: any) => {
-    const widget = allExistingWidgets.find((w) => w.key === key);
+    const widget = allWidgetsFlat.find((w) => w.key === key);
     if (widget) {
       db.transact(db.tx.widgets[widget.id].update({ value: val }));
     }
   };
 
-  // Scroll to bottom of stream when messages change
   useEffect(() => {
-    if (activeTab === "stream" && scrollRef.current) {
-      // Small timeout to allow render
+    if (activeTab === "messages" && scrollRef.current) {
       setTimeout(() => {
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 100);
@@ -292,7 +278,7 @@ export default function ConversationPage({
         <div className="border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0 justify-between z-20">
           <TabsList className="bg-transparent h-auto p-0 gap-6">
             <TabsTrigger
-              value="stream"
+              value="messages"
               className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
             >
               Messages
@@ -318,13 +304,10 @@ export default function ConversationPage({
           </div>
         </div>
 
-        {/* --- Content Area --- */}
-        <div className="flex-1 relative overflow-hidden bg-[#fafafa] dark:bg-[#0c0c0c]">
-          {/* Stream Tab (Messages) */}
-          <TabsContent value="stream" className="h-full m-0">
+        <div className="flex-1 relative overflow-hidden dark:bg-[#0c0c0c]">
+          <TabsContent value="messages" className="h-full m-0">
             <ScrollArea className="h-full">
               <div className="p-8 max-w-3xl mx-auto pb-32 min-h-full">
-                {/* Welcome Empty State */}
                 {messages.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-20 opacity-50">
                     <LayoutDashboard className="h-10 w-10 mb-4 text-slate-300 dark:text-slate-600" />
@@ -334,10 +317,8 @@ export default function ConversationPage({
                   </div>
                 )}
 
-                {/* Message History */}
                 <div className="space-y-6">
                   {messages.map((msg) => {
-                    // Render User Messages
                     if (msg.role === "user") {
                       return (
                         <div key={msg.id} className="flex justify-end w-full">
@@ -347,8 +328,6 @@ export default function ConversationPage({
                         </div>
                       );
                     }
-
-                    // Render Assistant Messages
                     return (
                       <div key={msg.id} className="flex flex-col w-full">
                         <span className="text-[10px] font-mono uppercase text-slate-400 mb-1 ml-1">
@@ -361,7 +340,6 @@ export default function ConversationPage({
                     );
                   })}
 
-                  {/* Loading State */}
                   {isAiLoading && (
                     <div className="flex flex-col w-full opacity-70 animate-pulse">
                       <span className="text-[10px] font-mono uppercase text-indigo-500 mb-1 ml-1">
@@ -399,26 +377,24 @@ export default function ConversationPage({
                   </div>
 
                   <div className="space-y-6">
-                    {allExistingWidgets
-                      .filter((w) => w.container?.id === container.id)
-                      .map((widget) => {
-                        const widgetProps = (widget.props as object) || {};
-                        const fullWidget = {
-                          ...widget,
-                          ...widgetProps,
-                        } as Widget;
-                        return (
-                          <WidgetRenderer
-                            key={widget.id}
-                            widget={fullWidget}
-                            value={widget.value}
-                            onChange={(val) =>
-                              handleWidgetChange(widget.key, val)
-                            }
-                            disabled={isAiLoading}
-                          />
-                        );
-                      })}
+                    {container.widgets.map((widget) => {
+                      const widgetProps = (widget.props as object) || {};
+                      const fullWidget = {
+                        ...widget,
+                        ...widgetProps,
+                      } as Widget;
+                      return (
+                        <WidgetRenderer
+                          key={widget.id}
+                          widget={fullWidget}
+                          value={widget.value}
+                          onChange={(val) =>
+                            handleWidgetChange(widget.key, val)
+                          }
+                          disabled={isAiLoading}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               </ScrollArea>
@@ -430,9 +406,7 @@ export default function ConversationPage({
       {/* --- Floating Input Area --- */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-6 z-30">
         <div className="relative group">
-          {/* Glow Effect */}
           <div className="absolute inset-0 bg-gradient-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 group-hover:opacity-30 transition-opacity" />
-
           <form
             onSubmit={handleTextSubmit}
             className="relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg shadow-2xl flex items-center gap-2 p-1.5 transition-all"
@@ -442,7 +416,7 @@ export default function ConversationPage({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={
-                activeTab === "stream"
+                activeTab === "messages"
                   ? "Describe changes or new interfaces..."
                   : `Refine the ${containers.find((c) => c.id === activeTab)?.label || "interface"}...`
               }
@@ -465,7 +439,7 @@ export default function ConversationPage({
           </form>
           <div className="text-center mt-2">
             <p className="text-[10px] text-slate-400 font-medium">
-              Radix generates and refines UI based on your stream.
+              Radix generates and refines UI based on your messages.
             </p>
           </div>
         </div>
