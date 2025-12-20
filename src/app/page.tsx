@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Loader2, ArrowRight, Rocket, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
@@ -19,7 +19,7 @@ import {
   Container,
 } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
-import Icon from "@/app/animated-icon.svg";
+import Icon from "@/app/icon.svg";
 
 // --- Types for Local State ---
 interface LocalContainer extends Container {
@@ -44,7 +44,7 @@ export default function LandingPage() {
   const [containers, setContainers] = useState<LocalContainer[]>([
     {
       id: "stream",
-      label: "Stream",
+      label: "Messages",
       description: "Project history and context",
     },
   ]);
@@ -247,146 +247,153 @@ export default function LandingPage() {
 
   // --- RENDER ---
   return (
-    <div className="min-h-screen w-full bg-slate-50 dark:bg-[#111] p-4 md:p-8 flex items-center justify-center font-sans">
+    <div className="min-h-screen w-full  flex items-center justify-center font-sans">
       {/* Main Card */}
-      <div className="w-full max-w-[1400px] h-[85vh] bg-white dark:bg-black border-2 border-slate-900 dark:border-slate-700 rounded-3xl overflow-hidden flex flex-col md:flex-row shadow-2xl relative">
+      {/*border border-slate-900 rounded-lg shadow-2xl bg-slate-50 p-4*/}
+      <div className="w-full h-full bg-white   overflow-hidden flex flex-col md:flex-row  relative">
         {/* --- LEFT PANEL (Auth & Brand) --- */}
-        <div className="w-full md:w-[400px] border-b-2 md:border-b-0 md:border-r-2 border-slate-900 dark:border-slate-700 flex flex-col p-8 md:p-10 shrink-0 bg-white dark:bg-black z-10">
-          <div className="space-y-4 mb-12">
-            <div className="h-10 w-10 relative">
-              <Image
-                src={Icon}
-                alt="Radix Logo"
-                fill
-                className="object-contain"
-              />
+        {/*shadow-2xl m-2 rounded-lg h-min bottom-0 absolute*/}
+        <div className="w-100 flex flex-col p-8 md:p-10 shrink-0 z-10 justify-end border-r border-slate-200">
+          <div>
+            <div className="space-y-4 mb-12">
+              <div>
+                <div className="flex flex-row gap-2">
+                  <div className="h-8 w-8 relative">
+                    <Image
+                      src={Icon}
+                      alt="Radix Logo"
+                      fill
+                      className="object-contain"
+                    />
+                  </div>
+                  <h1 className="text-3xl font-bold tracking-tighter text-slate-900 mb-1 uppercase">
+                    RADIX
+                  </h1>
+                </div>
+                <p className="text-xs font-mono uppercase tracking-widest text-slate-500">
+                  Generative AI Workspaces
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tighter text-slate-900 dark:text-white mb-1">
-                RADIX
-              </h1>
-              <p className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                Generative AI Workspace
+
+            <div className="flex-1 flex flex-col justify-center max-w-[320px]">
+              {!user ? (
+                !sentEmail ? (
+                  <form onSubmit={handleSendCode} className="space-y-4">
+                    <div className="space-y-2">
+                      <Input
+                        type="email"
+                        placeholder="hello@example.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="h-12 border-slate-300 focus-visible:ring-slate-900 rounded-md bg-transparent"
+                        required
+                        disabled={isAuthLoading}
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full h-12 bg-slate-900 text-white hover:bg-slate-800 rounded-md"
+                      disabled={isAuthLoading}
+                    >
+                      {isAuthLoading ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <span className="flex flex-row gap-2 justify-start items-center cursor-pointer">
+                          <ChevronRight /> Sign In with Email
+                        </span>
+                      )}
+                    </Button>
+                  </form>
+                ) : (
+                  <form
+                    onSubmit={handleVerify}
+                    className="space-y-4 animate-in fade-in slide-in-from-right-4"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-baseline">
+                        <label className="text-sm font-medium">
+                          Magic Code
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setSentEmail("")}
+                          className="text-xs text-slate-400 hover:text-slate-900"
+                        >
+                          Change email
+                        </button>
+                      </div>
+                      <Input
+                        placeholder="123456"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        className="h-12 border-slate-300 text-center text-lg tracking-[0.5em] font-mono rounded-md"
+                        autoFocus
+                        required
+                        disabled={isAuthLoading}
+                      />
+                      <p className="text-xs text-slate-500">
+                        Sent to {sentEmail}
+                      </p>
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md"
+                      disabled={isAuthLoading}
+                    >
+                      {isAuthLoading ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        "Verify Access"
+                      )}
+                    </Button>
+                  </form>
+                )
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 bg-slate-50 rounded-md border border-slate-100 ">
+                    <p className="text-sm text-slate-600 mb-1">Signed in as</p>
+                    <p className="font-medium truncate">{user.email}</p>
+                  </div>
+                  <Button
+                    onClick={() => router.push("/conversation/new")}
+                    className="w-full h-12"
+                  >
+                    Enter Workspace <ChevronRight className="ml-2 w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => db.auth.signOut()}
+                    className="w-full text-slate-500"
+                  >
+                    Sign Out
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="mt-auto pt-8">
+              <p className="text-[10px] font-mono uppercase text-slate-600 flex flex-row gap-2 align-center text-center1">
+                Built in London
+                <Rocket size={12} />
               </p>
             </div>
-          </div>
-
-          <div className="flex-1 flex flex-col justify-center max-w-[320px]">
-            {!user ? (
-              !sentEmail ? (
-                <form onSubmit={handleSendCode} className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Email Address</label>
-                    <Input
-                      type="email"
-                      placeholder="hello@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="h-12 border-slate-300 dark:border-slate-700 focus-visible:ring-slate-900 rounded-lg bg-transparent"
-                      required
-                      disabled={isAuthLoading}
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    className="w-full h-12 bg-slate-900 text-white hover:bg-slate-800 rounded-lg"
-                    disabled={isAuthLoading}
-                  >
-                    {isAuthLoading ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      "Sign In with Email"
-                    )}
-                  </Button>
-                </form>
-              ) : (
-                <form
-                  onSubmit={handleVerify}
-                  className="space-y-4 animate-in fade-in slide-in-from-right-4"
-                >
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-baseline">
-                      <label className="text-sm font-medium">Magic Code</label>
-                      <button
-                        type="button"
-                        onClick={() => setSentEmail("")}
-                        className="text-xs text-slate-400 hover:text-slate-900"
-                      >
-                        Change email
-                      </button>
-                    </div>
-                    <Input
-                      placeholder="123456"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      className="h-12 border-slate-300 text-center text-lg tracking-[0.5em] font-mono rounded-lg"
-                      autoFocus
-                      required
-                      disabled={isAuthLoading}
-                    />
-                    <p className="text-xs text-slate-500">
-                      Sent to {sentEmail}
-                    </p>
-                  </div>
-                  <Button
-                    type="submit"
-                    className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
-                    disabled={isAuthLoading}
-                  >
-                    {isAuthLoading ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      "Verify Access"
-                    )}
-                  </Button>
-                </form>
-              )
-            ) : (
-              <div className="space-y-4">
-                <div className="p-4 bg-slate-50 dark:bg-zinc-900 rounded-lg border border-slate-100 dark:border-zinc-800">
-                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">
-                    Signed in as
-                  </p>
-                  <p className="font-medium truncate">{user.email}</p>
-                </div>
-                <Button
-                  onClick={() => router.push("/conversation/new")}
-                  className="w-full h-12"
-                >
-                  Enter Workspace <ArrowRight className="ml-2 w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => db.auth.signOut()}
-                  className="w-full text-slate-500"
-                >
-                  Sign Out
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-auto pt-8">
-            <p className="text-[10px] font-mono uppercase text-slate-300 dark:text-slate-700">
-              Built in London
-            </p>
           </div>
         </div>
 
         {/* --- RIGHT PANEL (Interactive Playground) --- */}
-        <div className="flex-1 bg-slate-50/50 dark:bg-[#0c0c0c] flex flex-col min-w-0 relative">
+        <div className="flex-1 flex flex-col min-w-0 relative ">
           <Tabs
             value={activeTab}
             onValueChange={setActiveTab}
             className="flex-1 flex flex-col h-full"
           >
-            <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0">
+            <div className="border-b border-slate-200  bg-white px-4 h-14 flex items-center shrink-0">
               <TabsList className="bg-transparent h-auto p-0 gap-6">
                 {containers.map((c) => (
                   <TabsTrigger
                     key={c.id}
                     value={c.id}
-                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-indigo-600 data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 rounded-none px-0 py-3 text-slate-500 hover:text-slate-800 transition-all font-medium text-sm"
+                    className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black  border-b-2 border-slate-300 data-[state=active]:border-b-2 data-[state=active]:border-black px-2 py-2  text-slate-500 hover:text-slate-800 transition-all font-medium text-sm rounded-md cursor-pointer"
                   >
                     {c.label}
                   </TabsTrigger>
@@ -405,7 +412,7 @@ export default function LandingPage() {
                     <div className="p-8 max-w-3xl mx-auto pb-32">
                       {/* Container Description */}
                       {container.id !== "stream" && (
-                        <div className="mb-8 pb-6 border-b border-slate-100 dark:border-slate-800">
+                        <div className="mb-8 pb-6 border-b border-slate-100">
                           <h2 className="text-2xl font-semibold mb-2">
                             {container.label}
                           </h2>
@@ -470,7 +477,7 @@ export default function LandingPage() {
           {/* Input Area (Floating) */}
           <div className="absolute bottom-6 left-6 right-6 max-w-3xl mx-auto">
             <div className="relative group">
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl blur opacity-10 group-hover:opacity-20 transition-opacity" />
+              <div className="absolute inset-0 bg-linear-to-r from-slate-500 to-black rounded-xl blur opacity-10 group-hover:opacity-20 transition-opacity" />
               <form
                 onSubmit={handlePlaygroundSubmit}
                 className="relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-slate-800 p-1.5 rounded-xl shadow-lg flex items-center gap-2 pl-4"
@@ -491,7 +498,7 @@ export default function LandingPage() {
                   {isAiLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <ArrowRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4" />
                   )}
                 </Button>
               </form>
