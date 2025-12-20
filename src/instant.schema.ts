@@ -8,6 +8,7 @@ const _schema = i.schema({
     conversations: i.entity({
       title: i.string(),
       createdAt: i.number().indexed(),
+      icon: i.string().optional(),
     }),
     messages: i.entity({
       role: i.string(), // "user" | "assistant"

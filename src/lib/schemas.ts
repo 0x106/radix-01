@@ -140,6 +140,12 @@ export const ChatResponseSchema = z.object({
     .describe(
       "A short, concise title for the workspace (3-5 words). Only generate this for the first turn or if the topic changes significantly.",
     ),
+  icon: z
+    .string()
+    .optional()
+    .describe(
+      "A PascalCase Lucide icon name (e.g. 'LayoutDashboard', 'User', 'Settings')",
+    ),
 });
 
 export type Widget = z.infer<typeof WidgetSchema>;

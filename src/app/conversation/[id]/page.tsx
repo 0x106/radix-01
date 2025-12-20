@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ArrowRight, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Separator } from "@radix-ui/react-select";
 
 export default function ConversationPage({
   params,
@@ -292,7 +293,7 @@ export default function ConversationPage({
           <div className="flex items-center gap-2">
             <Badge
               variant="outline"
-              className="font-normal text-slate-500 border-slate-200 dark:border-zinc-800"
+              className="font-normal text-slate-500 border-slate-200 dark:border-zinc-800 uppercase text-xs font-mono px-4 py-1 rounded-md"
             >
               {conversation.title}
             </Badge>

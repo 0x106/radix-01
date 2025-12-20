@@ -16,6 +16,20 @@ import {
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import * as LucideIcons from "lucide-react"; // Import all icons
+
+const DynamicIcon = ({
+  name,
+  className,
+}: {
+  name?: string;
+  className?: string;
+}) => {
+  if (!name) return null;
+  const IconComponent = (LucideIcons as any)[name];
+  if (!IconComponent) return null;
+  return <IconComponent size={13} />;
+};
 
 export function Sidebar({ user }: { user: any }) {
   const router = useRouter();
@@ -167,7 +181,8 @@ export function Sidebar({ user }: { user: any }) {
                 )}
                 title={conv.title}
               >
-                <MessageSquare size={14} />
+                {/*<MessageSquare size={14} />*/}
+                <DynamicIcon name={conv.icon ?? "MessageSquare"} />
               </button>
             ))}
           </div>
