@@ -90,6 +90,11 @@ export const TableWidgetSchema = WidgetBase.extend({
   ),
 });
 
+export const TextDisplaySchema = WidgetBase.extend({
+  type: z.literal("text_display"),
+  variant: z.enum(["user", "assistant", "system"]).default("system"),
+});
+
 export const WidgetSchema = z.discriminatedUnion("type", [
   TextInputSchema,
   TextAreaSchema,
@@ -99,7 +104,8 @@ export const WidgetSchema = z.discriminatedUnion("type", [
   RadioGroupSchema,
   CheckboxGroupSchema,
   SliderSchema,
-  TableWidgetSchema, // <--- Added here
+  TableWidgetSchema,
+  TextDisplaySchema,
 ]);
 
 export const ContainerSchema = z.object({
