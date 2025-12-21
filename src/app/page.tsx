@@ -1,3 +1,4 @@
+// app/page.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -20,7 +21,7 @@ import {
   Command,
   NotebookText,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs"; // TabsList & Trigger moved to PageHeader
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
 import {
@@ -31,6 +32,9 @@ import {
 } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 import Icon from "@/app/icon.svg";
+import { AuthForms } from "@/components/auth-forms"; // New auth forms
+import { ChatInput } from "@/components/chat-input"; // New chat input
+import { PageHeader } from "@/components/page-header"; // New page header
 
 // --- Types for Local State ---
 interface LocalContainer extends Container {
@@ -92,12 +96,6 @@ export default function LandingPage() {
   // --- UI STATE ---
   const [hasStarted, setHasStarted] = useState(false);
 
-  // --- AUTH STATE ---
-  const [sentEmail, setSentEmail] = useState("");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
-
   // --- PLAYGROUND STATE ---
   const [input, setInput] = useState("");
   const [containers, setContainers] = useState<LocalContainer[]>([
@@ -121,39 +119,15 @@ export default function LandingPage() {
   ]);
   const [activeTab, setActiveTab] = useState("messages");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // --- AUTH HANDLERS ---
   useEffect(() => {
     if (user) {
-      // Logic to redirect if needed
+      // If user is logged in on landing page, redirect to a new conversation
+      // Or to their last conversation if available.
+      router.push("/conversation/new");
     }
-  }, [user]);
-
-  const handleSendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAuthLoading(true);
-    try {
-      await db.auth.sendMagicCode({ email });
-      setSentEmail(email);
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAuthLoading(true);
-    try {
-      await db.auth.signInWithMagicCode({ email: sentEmail, code });
-      router.refresh();
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-      setIsAuthLoading(false);
-    }
-  };
+  }, [user, router]);
 
   // --- AI HANDLERS ---
   const {
@@ -230,6 +204,20 @@ export default function LandingPage() {
           );
         }
         break;
+      case "DELETE_CONTAINER":
+        if (action.targetId) {
+          setContainers((prev) => prev.filter((c) => c.id !== action.targetId));
+          setWidgets((prev) =>
+            prev.filter((w) => w.containerId !== action.targetId),
+          );
+          if (activeTab === action.targetId) setActiveTab("messages");
+        }
+        break;
+      case "DELETE_WIDGET":
+        if (action.targetId) {
+          setWidgets((prev) => prev.filter((w) => w.key !== action.targetId));
+        }
+        break;
     }
   };
 
@@ -279,7 +267,9 @@ export default function LandingPage() {
   // Scroll to bottom of stream
   useEffect(() => {
     if (activeTab === "messages" && scrollRef.current) {
-      // scrollRef.current.scrollIntoView({ behavior: "smooth" });
+      setTimeout(() => {
+        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
     }
   }, [widgets, activeTab, partialObject, hasStarted]);
 
@@ -311,77 +301,10 @@ export default function LandingPage() {
 
             <div className="flex-1 flex flex-col justify-center max-w-[320px]">
               {!user ? (
-                !sentEmail ? (
-                  <form onSubmit={handleSendCode} className="space-y-4">
-                    <div className="space-y-2">
-                      <Input
-                        type="email"
-                        placeholder="hello@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="h-12 border-slate-300 dark:border-zinc-700 focus-visible:ring-slate-900 rounded-md bg-transparent"
-                        required
-                        disabled={isAuthLoading}
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-full h-12 bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 rounded-md"
-                      disabled={isAuthLoading}
-                    >
-                      {isAuthLoading ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        <span className="flex flex-row gap-2 justify-start items-center cursor-pointer">
-                          <ChevronRight /> Sign In with Email
-                        </span>
-                      )}
-                    </Button>
-                  </form>
-                ) : (
-                  <form
-                    onSubmit={handleVerify}
-                    className="space-y-4 animate-in fade-in slide-in-from-right-4"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-baseline">
-                        <label className="text-sm font-medium dark:text-slate-200">
-                          Magic Code
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setSentEmail("")}
-                          className="text-xs text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                        >
-                          Change email
-                        </button>
-                      </div>
-                      <Input
-                        placeholder="123456"
-                        value={code}
-                        onChange={(e) => setCode(e.target.value)}
-                        className="h-12 border-slate-300 dark:border-zinc-700 text-center text-lg tracking-[0.5em] font-mono rounded-md"
-                        autoFocus
-                        required
-                        disabled={isAuthLoading}
-                      />
-                      <p className="text-xs text-slate-500">
-                        Sent to {sentEmail}
-                      </p>
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md"
-                      disabled={isAuthLoading}
-                    >
-                      {isAuthLoading ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        "Verify Access"
-                      )}
-                    </Button>
-                  </form>
-                )
+                <AuthForms
+                  variant="landing"
+                  onAuthSuccess={() => router.push("/conversation/new")}
+                />
               ) : (
                 <div className="space-y-4">
                   <div className="p-4 bg-slate-50 dark:bg-zinc-900 rounded-md border border-slate-100 dark:border-zinc-800">
@@ -431,19 +354,12 @@ export default function LandingPage() {
               onValueChange={setActiveTab}
               className="flex-1 flex flex-col h-full"
             >
-              <div className="border-slate-200 dark:border-zinc-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0">
-                <TabsList className="bg-transparent h-auto p-0 gap-6">
-                  {containers.map((c) => (
-                    <TabsTrigger
-                      key={c.id}
-                      value={c.id}
-                      className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
-                    >
-                      {c.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
+              <PageHeader
+                containers={containers}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                showMessagesTab={true}
+              />
 
               <div className="flex-1 relative overflow-hidden bg-[#fafafa] dark:bg-[#0c0c0c]">
                 {containers.map((container) => (
@@ -505,7 +421,7 @@ export default function LandingPage() {
                                 </div>
                               </div>
                             )}
-                          {/*<div ref={scrollRef} />*/}
+                          <div ref={scrollRef} />
                         </div>
                       </div>
                     </ScrollArea>
@@ -524,53 +440,19 @@ export default function LandingPage() {
                 : "top-1/2 -translate-y-1/2 max-w-4xl left-1/2 -translate-x-1/2",
             )}
           >
-            <div className="relative group">
-              <div
-                className={cn(
-                  "absolute inset-0 bg-linear-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 transition-opacity",
-                  hasStarted ? "group-hover:opacity-30" : "opacity-40",
-                )}
-              />
-              <form
-                onSubmit={handlePlaygroundSubmit}
-                className={cn(
-                  "relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg shadow-xl flex items-center gap-2 pl-4 transition-all",
-                  hasStarted ? "p-1.5" : "p-3",
-                )}
-              >
-                <Input
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder={
-                    hasStarted
-                      ? "Describe an interface to build..."
-                      : "Describe an interface you want to build..."
-                  }
-                  className={cn(
-                    "flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent font-mono text-sm placeholder:text-slate-400",
-                    hasStarted ? "h-10" : "h-12 text-base",
-                  )}
-                  disabled={isAiLoading}
-                  autoFocus={!hasStarted}
-                />
-                <Button
-                  size={hasStarted ? "sm" : "default"}
-                  type="submit"
-                  disabled={!input.trim() || isAiLoading}
-                  className={cn(
-                    "rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all cursor-pointer disabled:opacity-0 transition-opacity",
-                    hasStarted ? "h-9 w-9 p-0" : "h-10 px-6",
-                  )}
-                >
-                  {isAiLoading ? (
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  ) : (
-                    <ChevronRight className="h-6 w-6" />
-                  )}
-                </Button>
-              </form>
-            </div>
+            <ChatInput
+              input={input}
+              setInput={setInput}
+              onSubmit={handlePlaygroundSubmit}
+              isLoading={isAiLoading}
+              placeholder={
+                hasStarted
+                  ? "Describe an interface to build..."
+                  : "Describe an interface you want to build..."
+              }
+              buttonIcon="chevron"
+              hasStarted={hasStarted}
+            />
 
             {/* Example Grid (Only shown before starting) */}
             <div
@@ -586,7 +468,7 @@ export default function LandingPage() {
                   key={example.label}
                   onClick={() => {
                     setInput(example.prompt);
-                    inputRef.current?.focus();
+                    // No direct inputRef needed here, ChatInput handles focus
                   }}
                   className="flex flex-col items-start p-4 h-24 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg hover:border-slate-400 dark:hover:border-zinc-600 hover:shadow-md transition-all text-left group"
                 >

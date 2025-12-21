@@ -7,12 +7,12 @@ import { db } from "@/lib/instant";
 import { id as generateId } from "@instantdb/react";
 import { ChatResponseSchema, WidgetAction, Widget } from "@/lib/schemas";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input"; // Keep for manual input if needed
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowRight, LayoutDashboard } from "lucide-react";
+import { Tabs, TabsContent } from "@/components/ui/tabs"; // TabsList & Trigger moved to PageHeader
+import { Loader2, LayoutDashboard } from "lucide-react";
+import { PageHeader } from "@/components/page-header"; // New page header
+import { ChatInput } from "@/components/chat-input"; // New chat input
 
 export default function ConversationPage({
   params,
@@ -43,7 +43,6 @@ export default function ConversationPage({
   const [activeTab, setActiveTab] = useState("messages");
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const {
     submit,
@@ -60,10 +59,18 @@ export default function ConversationPage({
       const msgId = generateId();
 
       // Update Title if AI generated one
-      if (object.title) {
+      if (object.title && object.title !== conversation?.title) {
         txs.push(
           db.tx.conversations[conversationId].update({
             title: object.title,
+          }),
+        );
+      }
+      // Update Icon if AI generated one
+      if (object.icon && object.icon !== conversation?.icon) {
+        txs.push(
+          db.tx.conversations[conversationId].update({
+            icon: object.icon,
           }),
         );
       }
@@ -115,23 +122,44 @@ export default function ConversationPage({
         break;
       case "UPDATE_CONTAINER":
         if (action.container) {
+          // Check if container exists in DB or was just added in this turn
           const targetId =
             containerIdMap.get(action.container.id) || action.container.id;
-          txs.push(db.tx.containers[targetId].merge(action.container));
+          // Only update if it's an existing container or a new one being modified in same turn
+          if (
+            containers.some((c) => c.id === targetId) ||
+            containerIdMap.has(action.container.id)
+          ) {
+            txs.push(db.tx.containers[targetId].merge(action.container));
+          }
         }
         break;
       case "DELETE_CONTAINER":
         if (action.targetId) {
           const targetId =
             containerIdMap.get(action.targetId) || action.targetId;
-          txs.push(db.tx.containers[targetId].delete());
+          if (containers.some((c) => c.id === targetId)) {
+            txs.push(db.tx.containers[targetId].delete());
+          }
         }
         break;
       case "ADD_WIDGET":
         if (action.widget && action.widget.containerId) {
           const resolvedContainerId =
             containerIdMap.get(action.widget.containerId) ||
-            action.widget.containerId;
+            action.widget.containerId; // Try to resolve new container IDs
+
+          // Ensure container actually exists or is being created in this transaction
+          if (
+            !containers.some((c) => c.id === resolvedContainerId) &&
+            !containerIdMap.has(action.widget.containerId)
+          ) {
+            console.warn(
+              `Attempted to add widget to non-existent container: ${resolvedContainerId}`,
+            );
+            return;
+          }
+
           const realWidgetId = generateId();
           widgetKeyMap.set(action.widget.key, realWidgetId);
           const { key, type, label, description, value, ...restProps } =
@@ -153,11 +181,12 @@ export default function ConversationPage({
       case "UPDATE_WIDGET":
         if (action.widget) {
           const { key, containerId, ...updates } = action.widget;
-          let targetWidgetId = widgetKeyMap.get(key);
+          let targetWidgetId = widgetKeyMap.get(key); // Check if created in this turn
           if (!targetWidgetId) {
             const existing = allWidgetsFlat.find((w) => w.key === key);
-            if (existing) targetWidgetId = existing.id;
+            if (existing) targetWidgetId = existing.id; // Check existing DB widgets
           }
+
           if (targetWidgetId) {
             const existingWidget = allWidgetsFlat.find(
               (w) => w.id === targetWidgetId,
@@ -178,6 +207,10 @@ export default function ConversationPage({
             }
 
             txs.push(db.tx.widgets[targetWidgetId].merge(updatePayload));
+          } else {
+            console.warn(
+              `Attempted to update non-existent widget with key: ${key}`,
+            );
           }
         }
         break;
@@ -209,9 +242,6 @@ export default function ConversationPage({
         .update({ role: "user", content: userContent, createdAt: Date.now() })
         .link({ conversation: conversationId }),
     );
-
-    // REMOVED: Naive title slicing.
-    // We now rely on onFinish to update the title via AI.
 
     const currentState = {
       containers: containers.map((c) => ({ id: c.id, label: c.label })),
@@ -269,34 +299,13 @@ export default function ConversationPage({
         className="flex-1 flex flex-col h-full overflow-hidden"
       >
         {/* --- Header / Tabs --- */}
-        <div className="border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0 justify-between z-20">
-          <TabsList className="bg-transparent h-auto p-0 gap-6">
-            <TabsTrigger
-              value="messages"
-              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
-            >
-              Messages
-            </TabsTrigger>
-            {containers.map((c) => (
-              <TabsTrigger
-                key={c.id}
-                value={c.id}
-                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
-              >
-                {c.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="font-normal text-slate-500 border-slate-200 dark:border-zinc-800 uppercase text-xs font-mono px-4 py-1 rounded-md"
-            >
-              {conversation.title}
-            </Badge>
-          </div>
-        </div>
+        <PageHeader
+          containers={containers}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          conversationTitle={conversation.title}
+          showMessagesTab={true}
+        />
 
         <div className="flex-1 relative overflow-hidden dark:bg-[#0c0c0c]">
           <TabsContent value="messages" className="h-full m-0">
@@ -397,43 +406,22 @@ export default function ConversationPage({
       </Tabs>
 
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-6 z-30">
-        <div className="relative group">
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 group-hover:opacity-30 transition-opacity" />
-          <form
-            onSubmit={handleTextSubmit}
-            className="relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg shadow-2xl flex items-center gap-2 p-1.5 transition-all"
-          >
-            <Input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                activeTab === "messages"
-                  ? "Describe changes or new interfaces..."
-                  : `Refine the ${containers.find((c) => c.id === activeTab)?.label || "interface"}...`
-              }
-              className="flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent font-mono text-sm placeholder:text-slate-400 h-10"
-              disabled={isAiLoading}
-              autoFocus
-            />
-            <Button
-              size="sm"
-              type="submit"
-              disabled={!input.trim() || isAiLoading}
-              className="rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all h-9 w-9 p-0 shrink-0"
-            >
-              {isAiLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
-            </Button>
-          </form>
-          <div className="text-center mt-2">
-            <p className="text-[10px] text-slate-400 font-medium">
-              Radix generates and refines UI based on your messages.
-            </p>
-          </div>
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          onSubmit={handleTextSubmit}
+          isLoading={isAiLoading}
+          placeholder={
+            activeTab === "messages"
+              ? "Describe changes or new interfaces..."
+              : `Refine the ${containers.find((c) => c.id === activeTab)?.label || "interface"}...`
+          }
+          buttonIcon="arrow"
+        />
+        <div className="text-center mt-2">
+          <p className="text-[10px] text-slate-400 font-medium">
+            Radix generates and refines UI based on your messages.
+          </p>
         </div>
       </div>
     </div>

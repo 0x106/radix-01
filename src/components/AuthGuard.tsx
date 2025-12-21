@@ -4,8 +4,8 @@
 import { usePathname } from "next/navigation";
 import { db } from "@/lib/instant";
 import AuthPage from "@/app/auth/page";
-import { Sidebar } from "@/components/Sidebar";
 import { Loader2 } from "lucide-react";
+import { AppShell } from "@/components/app-shell"; // Import the new AppShell
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoading, user, error } = db.useAuth();
@@ -13,9 +13,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // 1. Allow public access to landing page
   if (pathname === "/") {
-    // If we have a user on the landing page, we might want to still render the
-    // Landing Page but with a "Go to Dashboard" button, or just render it as is.
-    // The prompt implies the landing page IS the auth page, so we render children.
+    // The landing page handles its own layout and auth integration now.
+    // It should effectively act as the "unauthenticated" view for the root path.
     return <>{children}</>;
   }
 
@@ -39,12 +38,5 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // 5. Authenticated state -> Show App Shell
-  return (
-    <div className="flex h-screen w-full overflow-hidden">
-      <Sidebar user={user} />
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-white dark:bg-zinc-950">
-        {children}
-      </main>
-    </div>
-  );
+  return <AppShell user={user}>{children}</AppShell>;
 }
