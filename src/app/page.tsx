@@ -288,11 +288,11 @@ export default function LandingPage() {
     <div className="min-h-screen w-full flex items-center justify-center font-sans bg-white dark:bg-black">
       <div className="w-full h-full overflow-hidden flex flex-col md:flex-row relative">
         {/* --- LEFT PANEL (Auth & Brand) --- */}
-        <div className="w-full md:w-[400px] flex flex-col p-8 md:p-10 shrink-0 z-10 justify-end border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-black h-screen md:h-auto">
+        <div className="w-full md:w-100 flex flex-col p-8 md:p-10 shrink-0 z-10 justify-end border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-black h-screen md:h-auto">
           <div>
             <div className="space-y-4 mb-12">
               <div className="flex flex-row gap-2 items-center">
-                <div className="h-8 w-8 relative">
+                <div className="h-8 w-8 relative flex flex-row">
                   <Image
                     src={Icon}
                     alt="Radix Logo"
@@ -300,7 +300,7 @@ export default function LandingPage() {
                     className="object-contain"
                   />
                 </div>
-                <h1 className="text-3xl font-bold tracking-tighter text-slate-900 dark:text-white mb-1 uppercase">
+                <h1 className="text-3xl font-bold tracking-tighter text-slate-900 dark:text-white uppercase">
                   RADIX
                 </h1>
               </div>
@@ -521,13 +521,13 @@ export default function LandingPage() {
               "absolute transition-all duration-700 ease-in-out w-full px-6",
               hasStarted
                 ? "bottom-6 max-w-3xl left-1/2 -translate-x-1/2"
-                : "top-1/2 -translate-y-1/2 max-w-2xl left-1/2 -translate-x-1/2",
+                : "top-1/2 -translate-y-1/2 max-w-4xl left-1/2 -translate-x-1/2",
             )}
           >
             <div className="relative group">
               <div
                 className={cn(
-                  "absolute inset-0 bg-gradient-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 transition-opacity",
+                  "absolute inset-0 bg-linear-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 transition-opacity",
                   hasStarted ? "group-hover:opacity-30" : "opacity-40",
                 )}
               />
@@ -559,16 +559,14 @@ export default function LandingPage() {
                   type="submit"
                   disabled={!input.trim() || isAiLoading}
                   className={cn(
-                    "rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all",
-                    hasStarted ? "h-9 w-9 p-0" : "h-12 px-6",
+                    "rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all cursor-pointer disabled:opacity-0 transition-opacity",
+                    hasStarted ? "h-9 w-9 p-0" : "h-10 px-6",
                   )}
                 >
                   {isAiLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : hasStarted ? (
-                    <ChevronRight className="h-4 w-4" />
+                    <Loader2 className="h-6 w-6 animate-spin" />
                   ) : (
-                    <span className="font-medium">Generate</span>
+                    <ChevronRight className="h-6 w-6" />
                   )}
                 </Button>
               </form>

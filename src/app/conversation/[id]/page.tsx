@@ -13,8 +13,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, ArrowRight, LayoutDashboard } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Separator } from "@radix-ui/react-select";
 
 export default function ConversationPage({
   params,
