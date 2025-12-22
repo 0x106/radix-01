@@ -359,11 +359,13 @@ export function WidgetRenderer({
               />
             </SelectTrigger>
             <SelectContent>
-              {widget.options?.map((opt, idx) => (
-                <SelectItem key={opt.value + idx} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
+              {widget.options
+                ?.filter((opt) => opt.value !== "")
+                .map((opt, idx) => (
+                  <SelectItem key={opt.value + idx} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>

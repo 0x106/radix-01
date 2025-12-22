@@ -13,393 +13,105 @@ import { Loader2, LayoutDashboard } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { ChatInput } from "@/components/chat-input";
 
-// Helper type for the optimistic state
-type ContainerWithWidgets = any; // simplified for the merge logic
+// --- Types ---
+type ConversationParams = Promise<{ id: string }>;
+type MessageRole = "user" | "assistant";
 
+// --- Main Component ---
 export default function ConversationPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: ConversationParams;
 }) {
   const { id: conversationId } = use(params);
 
-  // --- INSTANTDB QUERY ---
-  const { data, isLoading: isDbLoading } = db.useQuery({
-    conversations: {
-      $: { where: { id: conversationId } },
-      messages: { $: { order: { createdAt: "asc" } } },
-      containers: {
-        $: { order: { label: "asc" } },
-        widgets: {},
-      },
-    },
-  });
+  // 1. Data Fetching
+  const {
+    conversation,
+    messages: dbMessages,
+    containers: dbContainers,
+    allWidgets,
+    isLoading: isDbLoading,
+  } = useConversationData(conversationId);
 
-  const conversation = data?.conversations[0];
-  const dbMessages = data?.conversations[0]?.messages || [];
-  const dbContainers = data?.conversations[0]?.containers || [];
-
-  const allWidgetsFlat = dbContainers.flatMap((c) => c.widgets);
-
-  // --- UI STATE ---
+  // 2. UI State
   const [activeTab, setActiveTab] = useState("messages");
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // 3. AI Handler (Handles streaming & DB commits)
   const {
     submit,
     isLoading: isAiLoading,
     object: partialObject,
-  } = useObject({
-    api: "/api/query",
-    schema: ChatResponseSchema,
-    onFinish: ({ object }) => {
-      if (!object) return;
+  } = useAiHandler(
+    conversationId,
+    conversation,
+    dbMessages,
+    allWidgets,
+    dbContainers,
+  );
 
-      const txs = [];
-      const timestamp = Date.now();
-      const msgId = generateId();
+  // 4. Optimistic UI (Merges DB state with AI stream)
+  const optimisticContainers = useOptimisticState(
+    dbContainers,
+    partialObject,
+    isAiLoading,
+  );
 
-      // Update Metadata
-      if (object.title && object.title !== conversation?.title) {
-        txs.push(
-          db.tx.conversations[conversationId].update({ title: object.title }),
-        );
-      }
-      if (object.icon && object.icon !== conversation?.icon) {
-        txs.push(
-          db.tx.conversations[conversationId].update({ icon: object.icon }),
-        );
-      }
-
-      // Add Assistant Message
-      txs.push(
-        db.tx.messages[msgId]
-          .update({
-            role: "assistant",
-            content: object.message,
-            createdAt: timestamp,
-          })
-          .link({ conversation: conversationId }),
-      );
-
-      // Maps to track IDs between "AI Conceptual ID" and "DB Real ID"
-      const containerIdMap = new Map<string, string>();
-      const widgetKeyMap = new Map<string, string>();
-
-      // Apply DB Transactions
-      if (object.actions) {
-        object.actions.forEach((action) => {
-          processAction(action, txs, containerIdMap, widgetKeyMap);
-        });
-      }
-      db.transact(txs);
-    },
-    onError: (err) => console.error("AI Error:", err),
-  });
-
-  // --- OPTIMISTIC MERGE LOGIC ---
-  // This merges the DB state with the streaming partialObject to render previews
-  const optimisticContainers = useMemo(() => {
-    // 1. Deep clone DB containers to avoid mutating read-only data
-    // We add a specific _source flag to help with rendering if needed
-    let currentContainers: any[] = JSON.parse(JSON.stringify(dbContainers)).map(
-      (c: any) => ({ ...c, widgets: c.widgets || [] }),
-    );
-
-    if (!isAiLoading || !partialObject?.actions) return currentContainers;
-
-    // 2. Iterate through partial actions
-    for (const action of partialObject.actions) {
-      if (!action || !action.type) continue;
-
-      // --- CONTAINER ACTIONS ---
-      if (action.type === "ADD_CONTAINER") {
-        const c = action.container;
-        // Fallback: Needs at least a temporary ID to render
-        if (c?.id) {
-          // Check if already exists (dedupe)
-          if (!currentContainers.find((ex) => ex.id === c.id)) {
-            currentContainers.push({
-              id: c.id,
-              label: c.label ?? "New Container...", // Fallback label
-              description: c.description ?? "",
-              widgets: [],
-            });
-          }
-        }
-      } else if (action.type === "UPDATE_CONTAINER") {
-        const c = action.container;
-        if (c?.id) {
-          const target = currentContainers.find((ex) => ex.id === c.id);
-          if (target) {
-            if (c.label !== undefined) target.label = c.label;
-            if (c.description !== undefined) target.description = c.description;
-          }
-        }
-      } else if (action.type === "DELETE_CONTAINER") {
-        if (action.targetId) {
-          currentContainers = currentContainers.filter(
-            (c) => c.id !== action.targetId,
-          );
-        }
-      }
-
-      // --- WIDGET ACTIONS ---
-      // Helper to find a widget across all containers
-      const findWidgetAndContainer = (key: string) => {
-        for (const cont of currentContainers) {
-          const wIndex = cont.widgets.findIndex((w: any) => w.key === key);
-          if (wIndex !== -1) return { container: cont, index: wIndex };
-        }
-        return null;
-      };
-
-      if (action.type === "ADD_WIDGET") {
-        const w = action.widget;
-        // Only proceed if we have a key and a containerId
-        if (w?.key && w?.containerId) {
-          const targetContainer = currentContainers.find(
-            (c) => c.id === w.containerId,
-          );
-          if (targetContainer) {
-            const existingIdx = targetContainer.widgets.findIndex(
-              (ex: any) => ex.key === w.key,
-            );
-            const newWidget = {
-              id: `temp-${w.key}`, // Temp ID for React Key
-              key: w.key,
-              type: w.type ?? "text", // Fallback type
-              label: w.label ?? "New Widget...",
-              description: w.description,
-              value: w.value,
-              // Spread rest of props but handle potential undefined
-              ...((w as any) || {}),
-            };
-
-            if (existingIdx === -1) {
-              targetContainer.widgets.push(newWidget);
-            } else {
-              // If it "exists" in optimistic state (e.g. added earlier in stream), update it
-              targetContainer.widgets[existingIdx] = {
-                ...targetContainer.widgets[existingIdx],
-                ...newWidget,
-              };
-            }
-          }
-        }
-      } else if (action.type === "UPDATE_WIDGET") {
-        const w = action.widget;
-        if (w?.key) {
-          const found = findWidgetAndContainer(w.key);
-          if (found) {
-            const { container, index } = found;
-            const existing = container.widgets[index];
-            // Merge updates safely
-            container.widgets[index] = {
-              ...existing,
-              ...w,
-              // Explicitly merge props object if it exists
-              props: { ...(existing.props || {}), ...(w.props || {}) },
-            };
-          }
-        }
-      } else if (action.type === "DELETE_WIDGET") {
-        if (action.targetId) {
-          const found = findWidgetAndContainer(action.targetId);
-          if (found) {
-            found.container.widgets.splice(found.index, 1);
-          }
-        }
-      }
-    }
-
-    return currentContainers;
-  }, [dbContainers, partialObject, isAiLoading]);
-
-  // --- ACTION PROCESSOR (DB Transaction Logic) ---
-  // (This matches your original logic, kept separate for clarity)
-  const processAction = (
-    action: WidgetAction,
-    txs: any[],
-    containerIdMap: Map<string, string>,
-    widgetKeyMap: Map<string, string>,
-  ) => {
-    switch (action.type) {
-      case "ADD_CONTAINER":
-        if (action.container) {
-          const realContainerId = generateId();
-          containerIdMap.set(action.container.id, realContainerId);
-          txs.push(
-            db.tx.containers[realContainerId]
-              .update({
-                label: action.container.label,
-                description: action.container.description,
-              })
-              .link({ conversation: conversationId }),
-          );
-        }
-        break;
-      case "UPDATE_CONTAINER":
-        if (action.container) {
-          const targetId =
-            containerIdMap.get(action.container.id) || action.container.id;
-          if (
-            dbContainers.some((c) => c.id === targetId) ||
-            containerIdMap.has(action.container.id)
-          ) {
-            txs.push(db.tx.containers[targetId].merge(action.container));
-          }
-        }
-        break;
-      case "DELETE_CONTAINER":
-        if (action.targetId) {
-          const targetId =
-            containerIdMap.get(action.targetId) || action.targetId;
-          if (dbContainers.some((c) => c.id === targetId)) {
-            txs.push(db.tx.containers[targetId].delete());
-          }
-        }
-        break;
-      case "ADD_WIDGET":
-        if (action.widget && action.widget.containerId) {
-          const resolvedContainerId =
-            containerIdMap.get(action.widget.containerId) ||
-            action.widget.containerId;
-
-          // Check against DB containers OR newly mapped containers
-          const containerExists =
-            dbContainers.some((c) => c.id === resolvedContainerId) ||
-            containerIdMap.has(action.widget.containerId);
-
-          if (!containerExists) return;
-
-          const realWidgetId = generateId();
-          widgetKeyMap.set(action.widget.key, realWidgetId);
-          const { key, type, label, description, value, ...restProps } =
-            action.widget;
-          txs.push(
-            db.tx.widgets[realWidgetId]
-              .update({
-                key,
-                type,
-                label,
-                description,
-                value: value ?? undefined,
-                props: restProps ?? undefined,
-              })
-              .link({ container: resolvedContainerId }),
-          );
-        }
-        break;
-      case "UPDATE_WIDGET":
-        if (action.widget) {
-          const { key, containerId, ...updates } = action.widget;
-          let targetWidgetId = widgetKeyMap.get(key);
-          if (!targetWidgetId) {
-            const existing = allWidgetsFlat.find((w) => w.key === key);
-            if (existing) targetWidgetId = existing.id;
-          }
-
-          if (targetWidgetId) {
-            const existingWidget = allWidgetsFlat.find(
-              (w) => w.id === targetWidgetId,
-            );
-            const currentProps = (existingWidget?.props as object) || {};
-            const { label, description, type, value, ...restProps } =
-              updates as any;
-
-            const updatePayload: any = {};
-            if (label !== undefined) updatePayload.label = label;
-            if (description !== undefined)
-              updatePayload.description = description;
-            if (type !== undefined) updatePayload.type = type;
-            if (value !== undefined) updatePayload.value = value;
-
-            if (Object.keys(restProps).length > 0) {
-              updatePayload.props = { ...currentProps, ...restProps };
-            }
-
-            txs.push(db.tx.widgets[targetWidgetId].merge(updatePayload));
-          }
-        }
-        break;
-      case "DELETE_WIDGET":
-        if (action.targetId) {
-          let idToDelete = widgetKeyMap.get(action.targetId);
-          if (!idToDelete) {
-            const existing = allWidgetsFlat.find(
-              (w) => w.key === action.targetId,
-            );
-            if (existing) idToDelete = existing.id;
-          }
-          if (idToDelete) txs.push(db.tx.widgets[idToDelete].delete());
-        }
-        break;
-    }
-  };
-
+  // 5. User Actions
   const handleTextSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isAiLoading) return;
 
+    // Optimistic User Message
     const userContent = input;
     setInput("");
-    const msgId = generateId();
 
+    // DB Commit
     db.transact(
-      db.tx.messages[msgId]
+      db.tx.messages[generateId()]
         .update({ role: "user", content: userContent, createdAt: Date.now() })
         .link({ conversation: conversationId }),
     );
 
-    const currentState = {
-      containers: dbContainers.map((c) => ({ id: c.id, label: c.label })),
-      widgets: allWidgetsFlat.map((w) => ({
-        key: w.key,
-        containerId: w.container?.id,
-        type: w.type,
-        label: w.label,
-        value: w.value,
-        ...((w.props as object) || {}),
-      })),
-    };
-
+    // Prepare Context for AI
+    const currentState = serializeCurrentState(dbContainers, allWidgets);
     const apiMessages = [
       ...dbMessages.map((m) => ({
-        role: m.role as "user" | "assistant",
+        role: m.role as MessageRole,
         content: m.content,
       })),
-      { role: "user" as const, content: userContent },
+      {
+        role: "user" as const,
+        content: `${userContent}\n\n[Current State]:\n\`\`\`json\n${currentState}\n\`\`\``,
+      },
     ];
-    apiMessages[apiMessages.length - 1].content +=
-      `\n\n[Current State]:\n\`\`\`json\n${JSON.stringify(currentState)}\n\`\`\``;
 
     submit({ messages: apiMessages });
   };
 
   const handleWidgetChange = (key: string, val: any) => {
-    const widget = allWidgetsFlat.find((w) => w.key === key);
+    const widget = allWidgets.find((w) => w.key === key);
     if (widget) {
       db.transact(db.tx.widgets[widget.id].update({ value: val }));
     }
   };
 
+  // Scroll to bottom effect
   useEffect(() => {
     if (activeTab === "messages" && scrollRef.current) {
-      setTimeout(() => {
-        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
+      setTimeout(
+        () => scrollRef.current?.scrollIntoView({ behavior: "smooth" }),
+        100,
+      );
     }
   }, [dbMessages.length, isAiLoading, activeTab, partialObject?.message]);
 
-  if (isDbLoading)
-    return (
-      <div className="flex h-screen items-center justify-center bg-white dark:bg-black">
-        <Loader2 className="animate-spin text-slate-300" />
-      </div>
-    );
+  if (isDbLoading) return <LoadingScreen />;
   if (!conversation) return <div className="p-10">Conversation not found</div>;
+
+  const currentTitle = partialObject?.title ?? conversation.title;
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-white dark:bg-black relative overflow-hidden">
@@ -408,73 +120,31 @@ export default function ConversationPage({
         onValueChange={setActiveTab}
         className="flex-1 flex flex-col h-full overflow-hidden"
       >
-        {/* --- Header / Tabs --- */}
         <PageHeader
-          containers={optimisticContainers} // Use Optimistic Data
+          containers={optimisticContainers}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          conversationTitle={partialObject?.title ?? conversation.title} // Optimistic Title
+          conversationTitle={currentTitle}
           showMessagesTab={true}
         />
 
         <div className="flex-1 relative overflow-hidden dark:bg-[#0c0c0c]">
+          {/* Messages Tab */}
           <TabsContent value="messages" className="h-full m-0">
             <ScrollArea className="h-full">
               <div className="p-8 max-w-3xl mx-auto pb-32 min-h-full">
-                {dbMessages.length === 0 && !isAiLoading && (
-                  <div className="flex flex-col items-center justify-center py-20 opacity-50">
-                    <LayoutDashboard className="h-10 w-10 mb-4 text-slate-300 dark:text-slate-600" />
-                    <p className="text-slate-500 dark:text-slate-400">
-                      Start building your interface.
-                    </p>
-                  </div>
-                )}
-
-                <div className="space-y-6">
-                  {/* Existing DB Messages */}
-                  {dbMessages.map((msg) => {
-                    if (msg.role === "user") {
-                      return (
-                        <div key={msg.id} className="flex justify-end w-full">
-                          <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-slate-100 px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm max-w-[90%] shadow-sm">
-                            {msg.content}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={msg.id} className="flex flex-col w-full">
-                        <span className="text-[10px] font-mono uppercase text-slate-400 mb-1 ml-1">
-                          Radix AI
-                        </span>
-                        <div className="bg-white border border-slate-200 dark:bg-zinc-900 dark:border-zinc-800 px-5 py-4 rounded-lg rounded-tl-sm text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap shadow-sm">
-                          {msg.content}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Optimistic / Streaming Message */}
-                  {isAiLoading && partialObject && (
-                    <div className="flex flex-col w-full animate-in fade-in duration-300">
-                      <span className="text-[10px] font-mono uppercase text-indigo-500 mb-1 ml-1">
-                        Generating...
-                      </span>
-                      <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 px-5 py-4 rounded-lg rounded-tl-sm text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap shadow-sm">
-                        {/* Render what we have, fallback to empty string to avoid crashes */}
-                        {partialObject.message ?? ""}
-                        <span className="inline-block w-1.5 h-4 ml-1 align-middle bg-indigo-500 animate-pulse" />
-                      </div>
-                    </div>
-                  )}
-                  <div ref={scrollRef} />
-                </div>
+                <MessageList
+                  messages={dbMessages}
+                  isLoading={isAiLoading}
+                  streamingMessage={partialObject?.message}
+                />
+                <div ref={scrollRef} />
               </div>
             </ScrollArea>
           </TabsContent>
 
-          {/* Render Optimistic Containers */}
-          {optimisticContainers.map((container: any) => (
+          {/* Container Tabs */}
+          {optimisticContainers.map((container) => (
             <TabsContent
               key={container.id}
               value={container.id}
@@ -482,40 +152,23 @@ export default function ConversationPage({
             >
               <ScrollArea className="h-full">
                 <div className="p-8 max-w-3xl mx-auto pb-32">
-                  <div className="mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800">
-                    <h2 className="text-2xl font-semibold mb-2 text-slate-900 dark:text-white">
-                      {container.label ?? "Untitled Container"}
-                    </h2>
-                    {container.description && (
-                      <p className="text-slate-500 dark:text-slate-400">
-                        {container.description}
-                      </p>
-                    )}
-                  </div>
-
+                  <ContainerHeader
+                    label={container.label}
+                    description={container.description}
+                  />
                   <div className="space-y-6">
-                    {container.widgets.map((widget: any) => {
-                      // Flatten props for renderer, handle missing fields
-                      const widgetProps = (widget.props as object) || {};
-                      const fullWidget = {
-                        ...widget,
-                        ...widgetProps,
-                      } as Widget;
-
-                      return (
-                        <WidgetRenderer
-                          key={widget.id || widget.key} // Fallback to key if ID isn't generated yet
-                          widget={fullWidget}
-                          value={widget.value}
-                          onChange={(val) =>
-                            // Only allow editing if it's a real DB widget (has a real ID, not temp)
-                            !widget.id.startsWith("temp-") &&
-                            handleWidgetChange(widget.key, val)
-                          }
-                          disabled={isAiLoading}
-                        />
-                      );
-                    })}
+                    {container.widgets.map((widget: any) => (
+                      <WidgetRenderer
+                        key={widget.id || widget.key}
+                        widget={{ ...widget, ...(widget.props || {}) }}
+                        value={widget.value}
+                        onChange={(val) =>
+                          !widget.id.startsWith("temp-") &&
+                          handleWidgetChange(widget.key, val)
+                        }
+                        disabled={isAiLoading}
+                      />
+                    ))}
                     {container.widgets.length === 0 && (
                       <div className="text-center py-10 text-slate-400 text-sm">
                         Empty container
@@ -537,8 +190,8 @@ export default function ConversationPage({
           isLoading={isAiLoading}
           placeholder={
             activeTab === "messages"
-              ? "Describe changes or new interfaces..."
-              : `Refine the ${optimisticContainers.find((c: any) => c.id === activeTab)?.label || "interface"}...`
+              ? "Describe changes..."
+              : "Refine this view..."
           }
           buttonIcon="arrow"
         />
@@ -550,4 +203,409 @@ export default function ConversationPage({
       </div>
     </div>
   );
+}
+
+// --- Sub Components ---
+
+function LoadingScreen() {
+  return (
+    <div className="flex h-screen items-center justify-center bg-white dark:bg-black">
+      <Loader2 className="animate-spin text-slate-300" />
+    </div>
+  );
+}
+
+function ContainerHeader({
+  label,
+  description,
+}: {
+  label: string;
+  description?: string;
+}) {
+  return (
+    <div className="mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800">
+      <h2 className="text-2xl font-semibold mb-2 text-slate-900 dark:text-white">
+        {label ?? "Untitled"}
+      </h2>
+      {description && (
+        <p className="text-slate-500 dark:text-slate-400">{description}</p>
+      )}
+    </div>
+  );
+}
+
+function MessageList({
+  messages,
+  isLoading,
+  streamingMessage,
+}: {
+  messages: any[];
+  isLoading: boolean;
+  streamingMessage?: string;
+}) {
+  if (messages.length === 0 && !isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 opacity-50">
+        <LayoutDashboard className="h-10 w-10 mb-4 text-slate-300 dark:text-slate-600" />
+        <p className="text-slate-500 dark:text-slate-400">
+          Start building your interface.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {messages.map((msg) => (
+        <div
+          key={msg.id}
+          className={`flex w-full ${msg.role === "user" ? "justify-end" : "flex-col"}`}
+        >
+          {msg.role === "user" ? (
+            <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-slate-100 px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm max-w-[90%] shadow-sm">
+              {msg.content}
+            </div>
+          ) : (
+            <>
+              <span className="text-[10px] font-mono uppercase text-slate-400 mb-1 ml-1">
+                Radix AI
+              </span>
+              <div className="bg-white border border-slate-200 dark:bg-zinc-900 dark:border-zinc-800 px-5 py-4 rounded-lg rounded-tl-sm text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap shadow-sm">
+                {msg.content}
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+      {isLoading && streamingMessage && (
+        <div className="flex flex-col w-full animate-in fade-in duration-300">
+          <span className="text-[10px] font-mono uppercase text-indigo-500 mb-1 ml-1">
+            Generating...
+          </span>
+          <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 px-5 py-4 rounded-lg rounded-tl-sm text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap shadow-sm">
+            {streamingMessage}
+            <span className="inline-block w-1.5 h-4 ml-1 align-middle bg-indigo-500 animate-pulse" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Custom Hooks ---
+
+function useConversationData(conversationId: string) {
+  const { data, isLoading } = db.useQuery({
+    conversations: {
+      $: { where: { id: conversationId } },
+      messages: { $: { order: { createdAt: "asc" } } },
+      containers: {
+        $: { order: { label: "asc" } },
+        widgets: {},
+      },
+    },
+  });
+
+  const conversation = data?.conversations[0];
+  const containers = conversation?.containers || [];
+
+  return {
+    conversation,
+    messages: conversation?.messages || [],
+    containers,
+    allWidgets: containers.flatMap((c) => c.widgets),
+    isLoading,
+  };
+}
+
+function useAiHandler(
+  conversationId: string,
+  conversation: any,
+  dbMessages: any[],
+  allWidgets: any[],
+  dbContainers: any[],
+) {
+  return useObject({
+    api: "/api/query",
+    schema: ChatResponseSchema,
+    onFinish: ({ object }) => {
+      if (!object) return;
+      const txs: any[] = [];
+
+      // 1. Update Metadata
+      if (object.title && object.title !== conversation?.title) {
+        txs.push(
+          db.tx.conversations[conversationId].update({ title: object.title }),
+        );
+      }
+      if (object.icon && object.icon !== conversation?.icon) {
+        txs.push(
+          db.tx.conversations[conversationId].update({ icon: object.icon }),
+        );
+      }
+
+      // 2. Add Assistant Message
+      txs.push(
+        db.tx.messages[generateId()]
+          .update({
+            role: "assistant",
+            content: object.message,
+            createdAt: Date.now(),
+          })
+          .link({ conversation: conversationId }),
+      );
+
+      // 3. Process Actions
+      if (object.actions) {
+        const idMap = new Map<string, string>(); // Virtual ID -> Real ID
+        const keyMap = new Map<string, string>(); // Widget Key -> Real ID
+
+        object.actions.forEach((action) => {
+          applyActionToTransaction(
+            action,
+            txs,
+            conversationId,
+            dbContainers,
+            allWidgets,
+            idMap,
+            keyMap,
+          );
+        });
+      }
+      db.transact(txs);
+    },
+    onError: (err) => console.error("AI Error:", err),
+  });
+}
+
+/**
+ * Merges the database state with the partial AI stream to show instant updates
+ */
+function useOptimisticState(
+  dbContainers: any[],
+  partialObject: any,
+  isLoading: boolean,
+) {
+  return useMemo(() => {
+    // Deep copy to prevent mutation
+    let current = JSON.parse(JSON.stringify(dbContainers)).map((c: any) => ({
+      ...c,
+      widgets: c.widgets || [],
+    }));
+
+    if (!isLoading || !partialObject?.actions) return current;
+
+    for (const action of partialObject.actions) {
+      if (!action?.type) continue;
+      current = applyOptimisticAction(current, action);
+    }
+    return current;
+  }, [dbContainers, partialObject, isLoading]);
+}
+
+// --- Logic Helpers (Pure Functions) ---
+
+function serializeCurrentState(containers: any[], widgets: any[]) {
+  return JSON.stringify({
+    containers: containers.map((c) => ({ id: c.id, label: c.label })),
+    widgets: widgets.map((w) => ({
+      key: w.key,
+      containerId: w.container?.id,
+      type: w.type,
+      label: w.label,
+      value: w.value,
+      ...((w.props as object) || {}),
+    })),
+  });
+}
+
+function applyOptimisticAction(containers: any[], action: WidgetAction) {
+  // Helpers
+  const findWidget = (key: string) => {
+    for (const c of containers) {
+      const idx = c.widgets.findIndex((w: any) => w.key === key);
+      if (idx !== -1) return { container: c, index: idx };
+    }
+    return null;
+  };
+
+  switch (action.type) {
+    case "ADD_CONTAINER":
+      if (
+        action.container?.id &&
+        !containers.find((c) => c.id === action.container!.id)
+      ) {
+        containers.push({
+          id: action.container.id,
+          label: action.container.label ?? "New Container...",
+          description: action.container.description ?? "",
+          widgets: [],
+        });
+      }
+      break;
+
+    case "UPDATE_CONTAINER":
+      if (action.container?.id) {
+        const target = containers.find((c) => c.id === action.container!.id);
+        if (target) Object.assign(target, action.container);
+      }
+      break;
+
+    case "DELETE_CONTAINER":
+      if (action.targetId) {
+        return containers.filter((c) => c.id !== action.targetId);
+      }
+      break;
+
+    case "ADD_WIDGET":
+      if (action.widget?.key && action.widget.containerId) {
+        const target = containers.find(
+          (c) => c.id === action.widget!.containerId,
+        );
+        if (target) {
+          const idx = target.widgets.findIndex(
+            (w: any) => w.key === action.widget!.key,
+          );
+          const newWidget = {
+            id: `temp-${action.widget.key}`,
+            ...action.widget,
+            type: action.widget.type ?? "text",
+            label: action.widget.label ?? "New Widget",
+          };
+
+          if (idx === -1) target.widgets.push(newWidget);
+          else target.widgets[idx] = { ...target.widgets[idx], ...newWidget };
+        }
+      }
+      break;
+
+    case "UPDATE_WIDGET":
+      if (action.widget?.key) {
+        const found = findWidget(action.widget.key);
+        if (found) {
+          const existing = found.container.widgets[found.index];
+          found.container.widgets[found.index] = {
+            ...existing,
+            ...action.widget,
+            props: {
+              ...(existing.props || {}),
+              ...(action.widget.props || {}),
+            },
+          };
+        }
+      }
+      break;
+
+    case "DELETE_WIDGET":
+      if (action.targetId) {
+        const found = findWidget(action.targetId);
+        if (found) found.container.widgets.splice(found.index, 1);
+      }
+      break;
+  }
+  return containers;
+}
+
+function applyActionToTransaction(
+  action: WidgetAction,
+  txs: any[],
+  conversationId: string,
+  dbContainers: any[],
+  allWidgets: any[],
+  idMap: Map<string, string>,
+  keyMap: Map<string, string>,
+) {
+  // Helper to resolve virtual ID to real ID
+  const resolveId = (vid: string) => idMap.get(vid) || vid;
+  const resolveWidgetId = (key: string) =>
+    keyMap.get(key) || allWidgets.find((w) => w.key === key)?.id;
+
+  switch (action.type) {
+    case "ADD_CONTAINER": {
+      if (!action.container) return;
+      const realId = generateId();
+      idMap.set(action.container.id, realId);
+      txs.push(
+        db.tx.containers[realId]
+          .update({
+            label: action.container.label,
+            description: action.container.description,
+          })
+          .link({ conversation: conversationId }),
+      );
+      break;
+    }
+    case "UPDATE_CONTAINER": {
+      if (!action.container) return;
+      const realId = resolveId(action.container.id);
+      if (
+        dbContainers.some((c) => c.id === realId) ||
+        idMap.has(action.container.id)
+      ) {
+        txs.push(db.tx.containers[realId].merge(action.container));
+      }
+      break;
+    }
+    case "DELETE_CONTAINER": {
+      if (!action.targetId) return;
+      const realId = resolveId(action.targetId);
+      if (dbContainers.some((c) => c.id === realId)) {
+        txs.push(db.tx.containers[realId].delete());
+      }
+      break;
+    }
+    case "ADD_WIDGET": {
+      if (!action.widget?.containerId) return;
+      const containerId = resolveId(action.widget.containerId);
+      // Ensure container exists (either in DB or just created in this batch)
+      if (
+        !dbContainers.some((c) => c.id === containerId) &&
+        !idMap.has(action.widget.containerId)
+      )
+        return;
+
+      const widgetId = generateId();
+      keyMap.set(action.widget.key, widgetId);
+      const { key, type, label, description, value, ...props } = action.widget;
+
+      txs.push(
+        db.tx.widgets[widgetId]
+          .update({
+            key,
+            type,
+            label,
+            description,
+            value: value ?? undefined,
+            props: props ?? undefined,
+          })
+          .link({ container: containerId }),
+      );
+      break;
+    }
+    case "UPDATE_WIDGET": {
+      if (!action.widget) return;
+      const widgetId = resolveWidgetId(action.widget.key);
+      if (widgetId) {
+        const { key, containerId, label, description, type, value, ...props } =
+          action.widget as any;
+        const payload: any = {};
+        if (label !== undefined) payload.label = label;
+        if (description !== undefined) payload.description = description;
+        if (type !== undefined) payload.type = type;
+        if (value !== undefined) payload.value = value;
+        if (Object.keys(props).length > 0) {
+          const existing = allWidgets.find((w) => w.id === widgetId);
+          payload.props = { ...(existing?.props || {}), ...props };
+        }
+        txs.push(db.tx.widgets[widgetId].merge(payload));
+      }
+      break;
+    }
+    case "DELETE_WIDGET": {
+      if (!action.targetId) return;
+      const widgetId = resolveWidgetId(action.targetId);
+      if (widgetId) txs.push(db.tx.widgets[widgetId].delete());
+      break;
+    }
+  }
 }
