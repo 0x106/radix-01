@@ -41,7 +41,7 @@ export function WidgetRenderer({
   switch (widget.type) {
     case "text_display":
       const variant = (widget as any).variant || "system";
-      const content = value || props.value || widget.label; // Fallback hierarchy
+      const content = value || widget.label; // Fallback hierarchy
 
       if (variant === "user") {
         return (

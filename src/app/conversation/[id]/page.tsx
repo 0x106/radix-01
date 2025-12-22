@@ -38,6 +38,7 @@ export default function ConversationPage({
   const [activeTab, setActiveTab] = useState("messages");
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const partialObjectRef = useRef<any>(null);
 
   // 3. AI Handler (Handles streaming & DB commits)
   const {
@@ -50,7 +51,12 @@ export default function ConversationPage({
     dbMessages,
     allWidgets,
     dbContainers,
+    partialObjectRef,
   );
+
+  useEffect(() => {
+    partialObjectRef.current = partialObject;
+  }, [partialObject]);
 
   // 4. Optimistic UI (Merges DB state with AI stream)
   const optimisticContainers = useOptimisticState(
@@ -324,55 +330,91 @@ function useAiHandler(
   dbMessages: any[],
   allWidgets: any[],
   dbContainers: any[],
+  partialObjectRef: React.RefObject<any>,
 ) {
   return useObject({
     api: "/api/query",
     schema: ChatResponseSchema,
     onFinish: ({ object }) => {
-      if (!object) return;
-      const txs: any[] = [];
-
-      // 1. Update Metadata
-      if (object.title && object.title !== conversation?.title) {
-        txs.push(
-          db.tx.conversations[conversationId].update({ title: object.title }),
+      try {
+        const finalObject = object ?? partialObjectRef.current;
+        console.log(
+          "AI onFinish. Final object from stream:",
+          object,
+          "Fallback from ref:",
+          partialObjectRef.current,
         );
-      }
-      if (object.icon && object.icon !== conversation?.icon) {
-        txs.push(
-          db.tx.conversations[conversationId].update({ icon: object.icon }),
-        );
-      }
 
-      // 2. Add Assistant Message
-      txs.push(
-        db.tx.messages[generateId()]
-          .update({
-            role: "assistant",
-            content: object.message,
-            createdAt: Date.now(),
-          })
-          .link({ conversation: conversationId }),
-      );
-
-      // 3. Process Actions
-      if (object.actions) {
-        const idMap = new Map<string, string>(); // Virtual ID -> Real ID
-        const keyMap = new Map<string, string>(); // Widget Key -> Real ID
-
-        object.actions.forEach((action) => {
-          applyActionToTransaction(
-            action,
-            txs,
-            conversationId,
-            dbContainers,
-            allWidgets,
-            idMap,
-            keyMap,
+        if (!finalObject) {
+          console.warn(
+            "AI onFinish: stream ended with no valid object from stream or ref.",
           );
-        });
+          return;
+        }
+
+        const txs: any[] = [];
+
+        // 1. Update Metadata
+        if (finalObject.title && finalObject.title !== conversation?.title) {
+          txs.push(
+            db.tx.conversations[conversationId].update({
+              title: finalObject.title,
+            }),
+          );
+        }
+        if (finalObject.icon && finalObject.icon !== conversation?.icon) {
+          txs.push(
+            db.tx.conversations[conversationId].update({
+              icon: finalObject.icon,
+            }),
+          );
+        }
+
+        // 2. Add Assistant Message
+        if (finalObject.message) {
+          txs.push(
+            db.tx.messages[generateId()]
+              .update({
+                role: "assistant",
+                content: finalObject.message,
+                createdAt: Date.now(),
+              })
+              .link({ conversation: conversationId }),
+          );
+        }
+
+        // 3. Process Actions
+        if (finalObject.actions && finalObject.actions.length > 0) {
+          const idMap = new Map<string, string>(); // Virtual ID -> Real ID
+          const keyMap = new Map<string, string>(); // Widget Key -> Real ID
+
+          console.log("Processing actions:", finalObject.actions);
+          finalObject.actions.forEach((action: any) => {
+            try {
+              applyActionToTransaction(
+                action,
+                txs,
+                conversationId,
+                dbContainers,
+                allWidgets,
+                idMap,
+                keyMap,
+              );
+            } catch (e) {
+              console.error("Error applying action to transaction:", action, e);
+            }
+          });
+        }
+
+        if (txs.length > 0) {
+          console.log("Committing transactions:", JSON.stringify(txs, null, 2));
+          db.transact(txs);
+        } else {
+          console.log("No transactions to commit.");
+        }
+      } catch (error) {
+        console.error("Fatal error in onFinish:", error);
       }
-      db.transact(txs);
     },
     onError: (err) => console.error("AI Error:", err),
   });

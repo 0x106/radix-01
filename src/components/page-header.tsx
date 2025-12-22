@@ -26,7 +26,7 @@ export function PageHeader({
           <TabsTrigger
             value="messages"
             className={cn(
-              "data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer",
+              "data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-slate-500 dark:data-[state=active]:border-white px-2 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm cursor-pointer rounded-md",
             )}
           >
             Messages
@@ -37,7 +37,7 @@ export function PageHeader({
             key={c.id}
             value={c.id}
             className={cn(
-              "data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer",
+              "data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-slate-500 dark:data-[state=active]:border-white px-2 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm cursor-pointer rounded-md",
             )}
           >
             {c.label}
