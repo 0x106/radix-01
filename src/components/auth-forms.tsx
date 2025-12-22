@@ -160,7 +160,7 @@ export function AuthForms({ onAuthSuccess, variant }: AuthFormsProps) {
           <Button
             type="submit"
             className={cn(
-              "w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-medium",
+              "w-full h-12 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium",
               variant === "page" ? "h-10" : "",
             )}
             disabled={isLoading}
