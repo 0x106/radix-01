@@ -8,7 +8,7 @@ import { AuthForms } from "@/components/auth-forms"; // Import the new component
 export default function AuthPage() {
   return (
     <div className="flex w-full min-h-screen flex-col items-center justify-center bg-[#fafafa] dark:bg-[#0a0a0a] p-4 text-center">
-      <div className="w-fulla space-y-6 bg-white p-12 rounded-md shadow-2xl">
+      <div className="w-full space-y-6 bg-white p-12 rounded-md shadow-2xl">
         <div className="space-y-2 ">
           <div className="flex items-center justify-center  mb-6">
             <Image width="36" height="36" src={Icon} alt="Logo" />

@@ -1,18 +1,20 @@
 // app/conversation/[id]/page.tsx
 "use client";
 
-import { useEffect, useRef, useState, use } from "react";
+import { useEffect, useRef, useState, use, useMemo } from "react";
 import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { db } from "@/lib/instant";
 import { id as generateId } from "@instantdb/react";
 import { ChatResponseSchema, WidgetAction, Widget } from "@/lib/schemas";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
-import { Input } from "@/components/ui/input"; // Keep for manual input if needed
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent } from "@/components/ui/tabs"; // TabsList & Trigger moved to PageHeader
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Loader2, LayoutDashboard } from "lucide-react";
-import { PageHeader } from "@/components/page-header"; // New page header
-import { ChatInput } from "@/components/chat-input"; // New chat input
+import { PageHeader } from "@/components/page-header";
+import { ChatInput } from "@/components/chat-input";
+
+// Helper type for the optimistic state
+type ContainerWithWidgets = any; // simplified for the merge logic
 
 export default function ConversationPage({
   params,
@@ -34,10 +36,10 @@ export default function ConversationPage({
   });
 
   const conversation = data?.conversations[0];
-  const messages = data?.conversations[0]?.messages || [];
-  const containers = data?.conversations[0]?.containers || [];
+  const dbMessages = data?.conversations[0]?.messages || [];
+  const dbContainers = data?.conversations[0]?.containers || [];
 
-  const allWidgetsFlat = containers.flatMap((c) => c.widgets);
+  const allWidgetsFlat = dbContainers.flatMap((c) => c.widgets);
 
   // --- UI STATE ---
   const [activeTab, setActiveTab] = useState("messages");
@@ -58,23 +60,19 @@ export default function ConversationPage({
       const timestamp = Date.now();
       const msgId = generateId();
 
-      // Update Title if AI generated one
+      // Update Metadata
       if (object.title && object.title !== conversation?.title) {
         txs.push(
-          db.tx.conversations[conversationId].update({
-            title: object.title,
-          }),
+          db.tx.conversations[conversationId].update({ title: object.title }),
         );
       }
-      // Update Icon if AI generated one
       if (object.icon && object.icon !== conversation?.icon) {
         txs.push(
-          db.tx.conversations[conversationId].update({
-            icon: object.icon,
-          }),
+          db.tx.conversations[conversationId].update({ icon: object.icon }),
         );
       }
 
+      // Add Assistant Message
       txs.push(
         db.tx.messages[msgId]
           .update({
@@ -85,9 +83,11 @@ export default function ConversationPage({
           .link({ conversation: conversationId }),
       );
 
+      // Maps to track IDs between "AI Conceptual ID" and "DB Real ID"
       const containerIdMap = new Map<string, string>();
       const widgetKeyMap = new Map<string, string>();
 
+      // Apply DB Transactions
       if (object.actions) {
         object.actions.forEach((action) => {
           processAction(action, txs, containerIdMap, widgetKeyMap);
@@ -98,7 +98,127 @@ export default function ConversationPage({
     onError: (err) => console.error("AI Error:", err),
   });
 
-  // Action Processor
+  // --- OPTIMISTIC MERGE LOGIC ---
+  // This merges the DB state with the streaming partialObject to render previews
+  const optimisticContainers = useMemo(() => {
+    // 1. Deep clone DB containers to avoid mutating read-only data
+    // We add a specific _source flag to help with rendering if needed
+    let currentContainers: any[] = JSON.parse(JSON.stringify(dbContainers)).map(
+      (c: any) => ({ ...c, widgets: c.widgets || [] }),
+    );
+
+    if (!isAiLoading || !partialObject?.actions) return currentContainers;
+
+    // 2. Iterate through partial actions
+    for (const action of partialObject.actions) {
+      if (!action || !action.type) continue;
+
+      // --- CONTAINER ACTIONS ---
+      if (action.type === "ADD_CONTAINER") {
+        const c = action.container;
+        // Fallback: Needs at least a temporary ID to render
+        if (c?.id) {
+          // Check if already exists (dedupe)
+          if (!currentContainers.find((ex) => ex.id === c.id)) {
+            currentContainers.push({
+              id: c.id,
+              label: c.label ?? "New Container...", // Fallback label
+              description: c.description ?? "",
+              widgets: [],
+            });
+          }
+        }
+      } else if (action.type === "UPDATE_CONTAINER") {
+        const c = action.container;
+        if (c?.id) {
+          const target = currentContainers.find((ex) => ex.id === c.id);
+          if (target) {
+            if (c.label !== undefined) target.label = c.label;
+            if (c.description !== undefined) target.description = c.description;
+          }
+        }
+      } else if (action.type === "DELETE_CONTAINER") {
+        if (action.targetId) {
+          currentContainers = currentContainers.filter(
+            (c) => c.id !== action.targetId,
+          );
+        }
+      }
+
+      // --- WIDGET ACTIONS ---
+      // Helper to find a widget across all containers
+      const findWidgetAndContainer = (key: string) => {
+        for (const cont of currentContainers) {
+          const wIndex = cont.widgets.findIndex((w: any) => w.key === key);
+          if (wIndex !== -1) return { container: cont, index: wIndex };
+        }
+        return null;
+      };
+
+      if (action.type === "ADD_WIDGET") {
+        const w = action.widget;
+        // Only proceed if we have a key and a containerId
+        if (w?.key && w?.containerId) {
+          const targetContainer = currentContainers.find(
+            (c) => c.id === w.containerId,
+          );
+          if (targetContainer) {
+            const existingIdx = targetContainer.widgets.findIndex(
+              (ex: any) => ex.key === w.key,
+            );
+            const newWidget = {
+              id: `temp-${w.key}`, // Temp ID for React Key
+              key: w.key,
+              type: w.type ?? "text", // Fallback type
+              label: w.label ?? "New Widget...",
+              description: w.description,
+              value: w.value,
+              // Spread rest of props but handle potential undefined
+              ...((w as any) || {}),
+            };
+
+            if (existingIdx === -1) {
+              targetContainer.widgets.push(newWidget);
+            } else {
+              // If it "exists" in optimistic state (e.g. added earlier in stream), update it
+              targetContainer.widgets[existingIdx] = {
+                ...targetContainer.widgets[existingIdx],
+                ...newWidget,
+              };
+            }
+          }
+        }
+      } else if (action.type === "UPDATE_WIDGET") {
+        const w = action.widget;
+        if (w?.key) {
+          const found = findWidgetAndContainer(w.key);
+          if (found) {
+            const { container, index } = found;
+            const existing = container.widgets[index];
+            // Merge updates safely
+            container.widgets[index] = {
+              ...existing,
+              ...w,
+              // Explicitly merge props object if it exists
+              props: { ...(existing.props || {}), ...(w.props || {}) },
+            };
+          }
+        }
+      } else if (action.type === "DELETE_WIDGET") {
+        if (action.targetId) {
+          const found = findWidgetAndContainer(action.targetId);
+          if (found) {
+            found.container.widgets.splice(found.index, 1);
+          }
+        }
+      }
+    }
+
+    return currentContainers;
+  }, [dbContainers, partialObject, isAiLoading]);
+
+  // --- ACTION PROCESSOR (DB Transaction Logic) ---
+  // (This matches your original logic, kept separate for clarity)
   const processAction = (
     action: WidgetAction,
     txs: any[],
@@ -122,12 +242,10 @@ export default function ConversationPage({
         break;
       case "UPDATE_CONTAINER":
         if (action.container) {
-          // Check if container exists in DB or was just added in this turn
           const targetId =
             containerIdMap.get(action.container.id) || action.container.id;
-          // Only update if it's an existing container or a new one being modified in same turn
           if (
-            containers.some((c) => c.id === targetId) ||
+            dbContainers.some((c) => c.id === targetId) ||
             containerIdMap.has(action.container.id)
           ) {
             txs.push(db.tx.containers[targetId].merge(action.container));
@@ -138,7 +256,7 @@ export default function ConversationPage({
         if (action.targetId) {
           const targetId =
             containerIdMap.get(action.targetId) || action.targetId;
-          if (containers.some((c) => c.id === targetId)) {
+          if (dbContainers.some((c) => c.id === targetId)) {
             txs.push(db.tx.containers[targetId].delete());
           }
         }
@@ -147,18 +265,14 @@ export default function ConversationPage({
         if (action.widget && action.widget.containerId) {
           const resolvedContainerId =
             containerIdMap.get(action.widget.containerId) ||
-            action.widget.containerId; // Try to resolve new container IDs
+            action.widget.containerId;
 
-          // Ensure container actually exists or is being created in this transaction
-          if (
-            !containers.some((c) => c.id === resolvedContainerId) &&
-            !containerIdMap.has(action.widget.containerId)
-          ) {
-            console.warn(
-              `Attempted to add widget to non-existent container: ${resolvedContainerId}`,
-            );
-            return;
-          }
+          // Check against DB containers OR newly mapped containers
+          const containerExists =
+            dbContainers.some((c) => c.id === resolvedContainerId) ||
+            containerIdMap.has(action.widget.containerId);
+
+          if (!containerExists) return;
 
           const realWidgetId = generateId();
           widgetKeyMap.set(action.widget.key, realWidgetId);
@@ -181,10 +295,10 @@ export default function ConversationPage({
       case "UPDATE_WIDGET":
         if (action.widget) {
           const { key, containerId, ...updates } = action.widget;
-          let targetWidgetId = widgetKeyMap.get(key); // Check if created in this turn
+          let targetWidgetId = widgetKeyMap.get(key);
           if (!targetWidgetId) {
             const existing = allWidgetsFlat.find((w) => w.key === key);
-            if (existing) targetWidgetId = existing.id; // Check existing DB widgets
+            if (existing) targetWidgetId = existing.id;
           }
 
           if (targetWidgetId) {
@@ -207,10 +321,6 @@ export default function ConversationPage({
             }
 
             txs.push(db.tx.widgets[targetWidgetId].merge(updatePayload));
-          } else {
-            console.warn(
-              `Attempted to update non-existent widget with key: ${key}`,
-            );
           }
         }
         break;
@@ -244,7 +354,7 @@ export default function ConversationPage({
     );
 
     const currentState = {
-      containers: containers.map((c) => ({ id: c.id, label: c.label })),
+      containers: dbContainers.map((c) => ({ id: c.id, label: c.label })),
       widgets: allWidgetsFlat.map((w) => ({
         key: w.key,
         containerId: w.container?.id,
@@ -256,7 +366,7 @@ export default function ConversationPage({
     };
 
     const apiMessages = [
-      ...messages.map((m) => ({
+      ...dbMessages.map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       })),
@@ -281,7 +391,7 @@ export default function ConversationPage({
         scrollRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 100);
     }
-  }, [messages.length, isAiLoading, activeTab]);
+  }, [dbMessages.length, isAiLoading, activeTab, partialObject?.message]);
 
   if (isDbLoading)
     return (
@@ -300,10 +410,10 @@ export default function ConversationPage({
       >
         {/* --- Header / Tabs --- */}
         <PageHeader
-          containers={containers}
+          containers={optimisticContainers} // Use Optimistic Data
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          conversationTitle={conversation.title}
+          conversationTitle={partialObject?.title ?? conversation.title} // Optimistic Title
           showMessagesTab={true}
         />
 
@@ -311,7 +421,7 @@ export default function ConversationPage({
           <TabsContent value="messages" className="h-full m-0">
             <ScrollArea className="h-full">
               <div className="p-8 max-w-3xl mx-auto pb-32 min-h-full">
-                {messages.length === 0 && (
+                {dbMessages.length === 0 && !isAiLoading && (
                   <div className="flex flex-col items-center justify-center py-20 opacity-50">
                     <LayoutDashboard className="h-10 w-10 mb-4 text-slate-300 dark:text-slate-600" />
                     <p className="text-slate-500 dark:text-slate-400">
@@ -321,7 +431,8 @@ export default function ConversationPage({
                 )}
 
                 <div className="space-y-6">
-                  {messages.map((msg) => {
+                  {/* Existing DB Messages */}
+                  {dbMessages.map((msg) => {
                     if (msg.role === "user") {
                       return (
                         <div key={msg.id} className="flex justify-end w-full">
@@ -343,13 +454,16 @@ export default function ConversationPage({
                     );
                   })}
 
-                  {isAiLoading && (
-                    <div className="flex flex-col w-full opacity-70 animate-pulse">
+                  {/* Optimistic / Streaming Message */}
+                  {isAiLoading && partialObject && (
+                    <div className="flex flex-col w-full animate-in fade-in duration-300">
                       <span className="text-[10px] font-mono uppercase text-indigo-500 mb-1 ml-1">
                         Generating...
                       </span>
-                      <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 shadow-sm">
-                        {partialObject?.message}
+                      <div className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 px-5 py-4 rounded-lg rounded-tl-sm text-sm text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap shadow-sm">
+                        {/* Render what we have, fallback to empty string to avoid crashes */}
+                        {partialObject.message ?? ""}
+                        <span className="inline-block w-1.5 h-4 ml-1 align-middle bg-indigo-500 animate-pulse" />
                       </div>
                     </div>
                   )}
@@ -359,7 +473,8 @@ export default function ConversationPage({
             </ScrollArea>
           </TabsContent>
 
-          {containers.map((container) => (
+          {/* Render Optimistic Containers */}
+          {optimisticContainers.map((container: any) => (
             <TabsContent
               key={container.id}
               value={container.id}
@@ -369,7 +484,7 @@ export default function ConversationPage({
                 <div className="p-8 max-w-3xl mx-auto pb-32">
                   <div className="mb-8 pb-6 border-b border-slate-200 dark:border-zinc-800">
                     <h2 className="text-2xl font-semibold mb-2 text-slate-900 dark:text-white">
-                      {container.label}
+                      {container.label ?? "Untitled Container"}
                     </h2>
                     {container.description && (
                       <p className="text-slate-500 dark:text-slate-400">
@@ -379,24 +494,33 @@ export default function ConversationPage({
                   </div>
 
                   <div className="space-y-6">
-                    {container.widgets.map((widget) => {
+                    {container.widgets.map((widget: any) => {
+                      // Flatten props for renderer, handle missing fields
                       const widgetProps = (widget.props as object) || {};
                       const fullWidget = {
                         ...widget,
                         ...widgetProps,
                       } as Widget;
+
                       return (
                         <WidgetRenderer
-                          key={widget.id}
+                          key={widget.id || widget.key} // Fallback to key if ID isn't generated yet
                           widget={fullWidget}
                           value={widget.value}
                           onChange={(val) =>
+                            // Only allow editing if it's a real DB widget (has a real ID, not temp)
+                            !widget.id.startsWith("temp-") &&
                             handleWidgetChange(widget.key, val)
                           }
                           disabled={isAiLoading}
                         />
                       );
                     })}
+                    {container.widgets.length === 0 && (
+                      <div className="text-center py-10 text-slate-400 text-sm">
+                        Empty container
+                      </div>
+                    )}
                   </div>
                 </div>
               </ScrollArea>
@@ -414,7 +538,7 @@ export default function ConversationPage({
           placeholder={
             activeTab === "messages"
               ? "Describe changes or new interfaces..."
-              : `Refine the ${containers.find((c) => c.id === activeTab)?.label || "interface"}...`
+              : `Refine the ${optimisticContainers.find((c: any) => c.id === activeTab)?.label || "interface"}...`
           }
           buttonIcon="arrow"
         />

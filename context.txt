@@ -1,46 +1,12 @@
 // app/auth/page.tsx
+// app/auth/page.tsx
 "use client";
-
-import { useState } from "react";
-import { db } from "@/lib/instant";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Loader2, ArrowRight } from "lucide-react";
 
 import Image from "next/image";
 import Icon from "@/app/animated-icon.svg";
+import { AuthForms } from "@/components/auth-forms"; // Import the new component
 
 export default function AuthPage() {
-  const [sentEmail, setSentEmail] = useState("");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      await db.auth.sendMagicCode({ email });
-      setSentEmail(email);
-    } catch (error: any) {
-      alert(`Failed to send code: ${error.body?.message || error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      await db.auth.signInWithMagicCode({ email: sentEmail, code });
-    } catch (error: any) {
-      alert(`Invalid code: ${error.body?.message || error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="flex w-full min-h-screen flex-col items-center justify-center bg-[#fafafa] dark:bg-[#0a0a0a] p-4 text-center">
       <div className="w-fulla space-y-6 bg-white p-12 rounded-md shadow-2xl">
@@ -56,68 +22,8 @@ export default function AuthPage() {
           </p>
         </div>
 
-        {!sentEmail ? (
-          <form onSubmit={handleSendCode} className="space-y-3">
-            <Input
-              type="email"
-              placeholder="name@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
-              required
-              className="h-10 bg-white dark:bg-zinc-900 shadow-sm border-slate-200 dark:border-zinc-800"
-            />
-            <Button
-              type="submit"
-              className="w-full h-10 bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 font-medium"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  Continue
-                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
-                </>
-              )}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerify} className="space-y-3">
-            <div className="text-xs text-slate-500 mb-2">
-              Code sent to{" "}
-              <span className="font-medium text-slate-700">{sentEmail}</span>
-            </div>
-            <Input
-              type="text"
-              placeholder="123456"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              disabled={isLoading}
-              required
-              className="h-10 bg-white text-center tracking-widest font-mono shadow-sm"
-              autoFocus
-            />
-            <Button
-              type="submit"
-              className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="animate-spin h-4 w-4" />
-              ) : (
-                "Verify Access"
-              )}
-            </Button>
-            <button
-              type="button"
-              className="text-xs text-slate-400 hover:text-slate-600 transition-colors mt-2"
-              onClick={() => setSentEmail("")}
-            >
-              Use a different email
-            </button>
-          </form>
-        )}
+        {/* Use the new AuthForms component */}
+        <AuthForms variant="page" />
       </div>
 
       <div className="fixed bottom-6 text-xs text-slate-300 dark:text-slate-700 font-mono uppercase">
@@ -167,7 +73,7 @@ import { openai } from "@ai-sdk/openai";
 import { streamObject } from "ai";
 import { ChatResponseSchema } from "@/lib/schemas";
 
-export const maxDuration = 60;
+export const maxDuration = 240;
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
@@ -267,6 +173,7 @@ export async function POST(req: Request) {
   return result.toTextStreamResponse();
 }
 // app/page.tsx
+// app/page.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -289,7 +196,7 @@ import {
   Command,
   NotebookText,
 } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs"; // TabsList & Trigger moved to PageHeader
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
 import {
@@ -300,6 +207,9 @@ import {
 } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 import Icon from "@/app/icon.svg";
+import { AuthForms } from "@/components/auth-forms"; // New auth forms
+import { ChatInput } from "@/components/chat-input"; // New chat input
+import { PageHeader } from "@/components/page-header"; // New page header
 
 // --- Types for Local State ---
 interface LocalContainer extends Container {
@@ -361,12 +271,6 @@ export default function LandingPage() {
   // --- UI STATE ---
   const [hasStarted, setHasStarted] = useState(false);
 
-  // --- AUTH STATE ---
-  const [sentEmail, setSentEmail] = useState("");
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
-
   // --- PLAYGROUND STATE ---
   const [input, setInput] = useState("");
   const [containers, setContainers] = useState<LocalContainer[]>([
@@ -390,39 +294,15 @@ export default function LandingPage() {
   ]);
   const [activeTab, setActiveTab] = useState("messages");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // --- AUTH HANDLERS ---
   useEffect(() => {
     if (user) {
-      // Logic to redirect if needed
+      // If user is logged in on landing page, redirect to a new conversation
+      // Or to their last conversation if available.
+      router.push("/conversation/new");
     }
-  }, [user]);
-
-  const handleSendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAuthLoading(true);
-    try {
-      await db.auth.sendMagicCode({ email });
-      setSentEmail(email);
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsAuthLoading(true);
-    try {
-      await db.auth.signInWithMagicCode({ email: sentEmail, code });
-      router.refresh();
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-      setIsAuthLoading(false);
-    }
-  };
+  }, [user, router]);
 
   // --- AI HANDLERS ---
   const {
@@ -499,6 +379,20 @@ export default function LandingPage() {
           );
         }
         break;
+      case "DELETE_CONTAINER":
+        if (action.targetId) {
+          setContainers((prev) => prev.filter((c) => c.id !== action.targetId));
+          setWidgets((prev) =>
+            prev.filter((w) => w.containerId !== action.targetId),
+          );
+          if (activeTab === action.targetId) setActiveTab("messages");
+        }
+        break;
+      case "DELETE_WIDGET":
+        if (action.targetId) {
+          setWidgets((prev) => prev.filter((w) => w.key !== action.targetId));
+        }
+        break;
     }
   };
 
@@ -548,7 +442,9 @@ export default function LandingPage() {
   // Scroll to bottom of stream
   useEffect(() => {
     if (activeTab === "messages" && scrollRef.current) {
-      // scrollRef.current.scrollIntoView({ behavior: "smooth" });
+      setTimeout(() => {
+        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
     }
   }, [widgets, activeTab, partialObject, hasStarted]);
 
@@ -580,77 +476,10 @@ export default function LandingPage() {
 
             <div className="flex-1 flex flex-col justify-center max-w-[320px]">
               {!user ? (
-                !sentEmail ? (
-                  <form onSubmit={handleSendCode} className="space-y-4">
-                    <div className="space-y-2">
-                      <Input
-                        type="email"
-                        placeholder="hello@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="h-12 border-slate-300 dark:border-zinc-700 focus-visible:ring-slate-900 rounded-md bg-transparent"
-                        required
-                        disabled={isAuthLoading}
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-full h-12 bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 rounded-md"
-                      disabled={isAuthLoading}
-                    >
-                      {isAuthLoading ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        <span className="flex flex-row gap-2 justify-start items-center cursor-pointer">
-                          <ChevronRight /> Sign In with Email
-                        </span>
-                      )}
-                    </Button>
-                  </form>
-                ) : (
-                  <form
-                    onSubmit={handleVerify}
-                    className="space-y-4 animate-in fade-in slide-in-from-right-4"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-baseline">
-                        <label className="text-sm font-medium dark:text-slate-200">
-                          Magic Code
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setSentEmail("")}
-                          className="text-xs text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                        >
-                          Change email
-                        </button>
-                      </div>
-                      <Input
-                        placeholder="123456"
-                        value={code}
-                        onChange={(e) => setCode(e.target.value)}
-                        className="h-12 border-slate-300 dark:border-zinc-700 text-center text-lg tracking-[0.5em] font-mono rounded-md"
-                        autoFocus
-                        required
-                        disabled={isAuthLoading}
-                      />
-                      <p className="text-xs text-slate-500">
-                        Sent to {sentEmail}
-                      </p>
-                    </div>
-                    <Button
-                      type="submit"
-                      className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md"
-                      disabled={isAuthLoading}
-                    >
-                      {isAuthLoading ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        "Verify Access"
-                      )}
-                    </Button>
-                  </form>
-                )
+                <AuthForms
+                  variant="landing"
+                  onAuthSuccess={() => router.push("/conversation/new")}
+                />
               ) : (
                 <div className="space-y-4">
                   <div className="p-4 bg-slate-50 dark:bg-zinc-900 rounded-md border border-slate-100 dark:border-zinc-800">
@@ -700,19 +529,12 @@ export default function LandingPage() {
               onValueChange={setActiveTab}
               className="flex-1 flex flex-col h-full"
             >
-              <div className="border-slate-200 dark:border-zinc-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0">
-                <TabsList className="bg-transparent h-auto p-0 gap-6">
-                  {containers.map((c) => (
-                    <TabsTrigger
-                      key={c.id}
-                      value={c.id}
-                      className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
-                    >
-                      {c.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
+              <PageHeader
+                containers={containers}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                showMessagesTab={true}
+              />
 
               <div className="flex-1 relative overflow-hidden bg-[#fafafa] dark:bg-[#0c0c0c]">
                 {containers.map((container) => (
@@ -774,7 +596,7 @@ export default function LandingPage() {
                                 </div>
                               </div>
                             )}
-                          {/*<div ref={scrollRef} />*/}
+                          <div ref={scrollRef} />
                         </div>
                       </div>
                     </ScrollArea>
@@ -793,53 +615,19 @@ export default function LandingPage() {
                 : "top-1/2 -translate-y-1/2 max-w-4xl left-1/2 -translate-x-1/2",
             )}
           >
-            <div className="relative group">
-              <div
-                className={cn(
-                  "absolute inset-0 bg-linear-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 transition-opacity",
-                  hasStarted ? "group-hover:opacity-30" : "opacity-40",
-                )}
-              />
-              <form
-                onSubmit={handlePlaygroundSubmit}
-                className={cn(
-                  "relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg shadow-xl flex items-center gap-2 pl-4 transition-all",
-                  hasStarted ? "p-1.5" : "p-3",
-                )}
-              >
-                <Input
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder={
-                    hasStarted
-                      ? "Describe an interface to build..."
-                      : "Describe an interface you want to build..."
-                  }
-                  className={cn(
-                    "flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent font-mono text-sm placeholder:text-slate-400",
-                    hasStarted ? "h-10" : "h-12 text-base",
-                  )}
-                  disabled={isAiLoading}
-                  autoFocus={!hasStarted}
-                />
-                <Button
-                  size={hasStarted ? "sm" : "default"}
-                  type="submit"
-                  disabled={!input.trim() || isAiLoading}
-                  className={cn(
-                    "rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all cursor-pointer disabled:opacity-0 transition-opacity",
-                    hasStarted ? "h-9 w-9 p-0" : "h-10 px-6",
-                  )}
-                >
-                  {isAiLoading ? (
-                    <Loader2 className="h-6 w-6 animate-spin" />
-                  ) : (
-                    <ChevronRight className="h-6 w-6" />
-                  )}
-                </Button>
-              </form>
-            </div>
+            <ChatInput
+              input={input}
+              setInput={setInput}
+              onSubmit={handlePlaygroundSubmit}
+              isLoading={isAiLoading}
+              placeholder={
+                hasStarted
+                  ? "Describe an interface to build..."
+                  : "Describe an interface you want to build..."
+              }
+              buttonIcon="chevron"
+              hasStarted={hasStarted}
+            />
 
             {/* Example Grid (Only shown before starting) */}
             <div
@@ -855,7 +643,7 @@ export default function LandingPage() {
                   key={example.label}
                   onClick={() => {
                     setInput(example.prompt);
-                    inputRef.current?.focus();
+                    // No direct inputRef needed here, ChatInput handles focus
                   }}
                   className="flex flex-col items-start p-4 h-24 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg hover:border-slate-400 dark:hover:border-zinc-600 hover:shadow-md transition-all text-left group"
                 >
@@ -893,12 +681,12 @@ import { db } from "@/lib/instant";
 import { id as generateId } from "@instantdb/react";
 import { ChatResponseSchema, WidgetAction, Widget } from "@/lib/schemas";
 import { WidgetRenderer } from "@/components/WidgetRenderer";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input"; // Keep for manual input if needed
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowRight, LayoutDashboard } from "lucide-react";
+import { Tabs, TabsContent } from "@/components/ui/tabs"; // TabsList & Trigger moved to PageHeader
+import { Loader2, LayoutDashboard } from "lucide-react";
+import { PageHeader } from "@/components/page-header"; // New page header
+import { ChatInput } from "@/components/chat-input"; // New chat input
 
 export default function ConversationPage({
   params,
@@ -929,7 +717,6 @@ export default function ConversationPage({
   const [activeTab, setActiveTab] = useState("messages");
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const {
     submit,
@@ -946,10 +733,18 @@ export default function ConversationPage({
       const msgId = generateId();
 
       // Update Title if AI generated one
-      if (object.title) {
+      if (object.title && object.title !== conversation?.title) {
         txs.push(
           db.tx.conversations[conversationId].update({
             title: object.title,
+          }),
+        );
+      }
+      // Update Icon if AI generated one
+      if (object.icon && object.icon !== conversation?.icon) {
+        txs.push(
+          db.tx.conversations[conversationId].update({
+            icon: object.icon,
           }),
         );
       }
@@ -1001,23 +796,44 @@ export default function ConversationPage({
         break;
       case "UPDATE_CONTAINER":
         if (action.container) {
+          // Check if container exists in DB or was just added in this turn
           const targetId =
             containerIdMap.get(action.container.id) || action.container.id;
-          txs.push(db.tx.containers[targetId].merge(action.container));
+          // Only update if it's an existing container or a new one being modified in same turn
+          if (
+            containers.some((c) => c.id === targetId) ||
+            containerIdMap.has(action.container.id)
+          ) {
+            txs.push(db.tx.containers[targetId].merge(action.container));
+          }
         }
         break;
       case "DELETE_CONTAINER":
         if (action.targetId) {
           const targetId =
             containerIdMap.get(action.targetId) || action.targetId;
-          txs.push(db.tx.containers[targetId].delete());
+          if (containers.some((c) => c.id === targetId)) {
+            txs.push(db.tx.containers[targetId].delete());
+          }
         }
         break;
       case "ADD_WIDGET":
         if (action.widget && action.widget.containerId) {
           const resolvedContainerId =
             containerIdMap.get(action.widget.containerId) ||
-            action.widget.containerId;
+            action.widget.containerId; // Try to resolve new container IDs
+
+          // Ensure container actually exists or is being created in this transaction
+          if (
+            !containers.some((c) => c.id === resolvedContainerId) &&
+            !containerIdMap.has(action.widget.containerId)
+          ) {
+            console.warn(
+              `Attempted to add widget to non-existent container: ${resolvedContainerId}`,
+            );
+            return;
+          }
+
           const realWidgetId = generateId();
           widgetKeyMap.set(action.widget.key, realWidgetId);
           const { key, type, label, description, value, ...restProps } =
@@ -1039,11 +855,12 @@ export default function ConversationPage({
       case "UPDATE_WIDGET":
         if (action.widget) {
           const { key, containerId, ...updates } = action.widget;
-          let targetWidgetId = widgetKeyMap.get(key);
+          let targetWidgetId = widgetKeyMap.get(key); // Check if created in this turn
           if (!targetWidgetId) {
             const existing = allWidgetsFlat.find((w) => w.key === key);
-            if (existing) targetWidgetId = existing.id;
+            if (existing) targetWidgetId = existing.id; // Check existing DB widgets
           }
+
           if (targetWidgetId) {
             const existingWidget = allWidgetsFlat.find(
               (w) => w.id === targetWidgetId,
@@ -1064,6 +881,10 @@ export default function ConversationPage({
             }
 
             txs.push(db.tx.widgets[targetWidgetId].merge(updatePayload));
+          } else {
+            console.warn(
+              `Attempted to update non-existent widget with key: ${key}`,
+            );
           }
         }
         break;
@@ -1095,9 +916,6 @@ export default function ConversationPage({
         .update({ role: "user", content: userContent, createdAt: Date.now() })
         .link({ conversation: conversationId }),
     );
-
-    // REMOVED: Naive title slicing.
-    // We now rely on onFinish to update the title via AI.
 
     const currentState = {
       containers: containers.map((c) => ({ id: c.id, label: c.label })),
@@ -1155,34 +973,13 @@ export default function ConversationPage({
         className="flex-1 flex flex-col h-full overflow-hidden"
       >
         {/* --- Header / Tabs --- */}
-        <div className="border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0 justify-between z-20">
-          <TabsList className="bg-transparent h-auto p-0 gap-6">
-            <TabsTrigger
-              value="messages"
-              className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
-            >
-              Messages
-            </TabsTrigger>
-            {containers.map((c) => (
-              <TabsTrigger
-                key={c.id}
-                value={c.id}
-                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer"
-              >
-                {c.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="font-normal text-slate-500 border-slate-200 dark:border-zinc-800 uppercase text-xs font-mono px-4 py-1 rounded-md"
-            >
-              {conversation.title}
-            </Badge>
-          </div>
-        </div>
+        <PageHeader
+          containers={containers}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          conversationTitle={conversation.title}
+          showMessagesTab={true}
+        />
 
         <div className="flex-1 relative overflow-hidden dark:bg-[#0c0c0c]">
           <TabsContent value="messages" className="h-full m-0">
@@ -1283,43 +1080,22 @@ export default function ConversationPage({
       </Tabs>
 
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-6 z-30">
-        <div className="relative group">
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 group-hover:opacity-30 transition-opacity" />
-          <form
-            onSubmit={handleTextSubmit}
-            className="relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg shadow-2xl flex items-center gap-2 p-1.5 transition-all"
-          >
-            <Input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                activeTab === "messages"
-                  ? "Describe changes or new interfaces..."
-                  : `Refine the ${containers.find((c) => c.id === activeTab)?.label || "interface"}...`
-              }
-              className="flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent font-mono text-sm placeholder:text-slate-400 h-10"
-              disabled={isAiLoading}
-              autoFocus
-            />
-            <Button
-              size="sm"
-              type="submit"
-              disabled={!input.trim() || isAiLoading}
-              className="rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all h-9 w-9 p-0 shrink-0"
-            >
-              {isAiLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
-            </Button>
-          </form>
-          <div className="text-center mt-2">
-            <p className="text-[10px] text-slate-400 font-medium">
-              Radix generates and refines UI based on your messages.
-            </p>
-          </div>
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          onSubmit={handleTextSubmit}
+          isLoading={isAiLoading}
+          placeholder={
+            activeTab === "messages"
+              ? "Describe changes or new interfaces..."
+              : `Refine the ${containers.find((c) => c.id === activeTab)?.label || "interface"}...`
+          }
+          buttonIcon="arrow"
+        />
+        <div className="text-center mt-2">
+          <p className="text-[10px] text-slate-400 font-medium">
+            Radix generates and refines UI based on your messages.
+          </p>
         </div>
       </div>
     </div>
@@ -1406,6 +1182,194 @@ const schema: AppSchema = _schema;
 
 export type { AppSchema };
 export default schema;
+// components/auth-forms.tsx
+// components/auth-forms.tsx
+"use client";
+
+import { useState } from "react";
+import { db } from "@/lib/instant";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Loader2, ArrowRight, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+
+interface AuthFormsProps {
+  onAuthSuccess?: () => void;
+  variant: "page" | "landing"; // Differentiate between auth page and landing page styles
+}
+
+export function AuthForms({ onAuthSuccess, variant }: AuthFormsProps) {
+  const router = useRouter();
+  const [sentEmail, setSentEmail] = useState("");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      await db.auth.sendMagicCode({ email });
+      setSentEmail(email);
+    } catch (error: any) {
+      alert(`Error: ${error.body?.message || error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      await db.auth.signInWithMagicCode({ email: sentEmail, code });
+      if (onAuthSuccess) {
+        onAuthSuccess();
+      } else {
+        router.refresh(); // Used for the AuthGuard flow
+      }
+    } catch (error: any) {
+      alert(`Invalid code: ${error.body?.message || error.message}`);
+      setIsLoading(false);
+    }
+  };
+
+  const inputClassNames =
+    variant === "page"
+      ? "h-10 bg-white dark:bg-zinc-900 shadow-sm border-slate-200 dark:border-zinc-800"
+      : "h-12 border-slate-300 dark:border-zinc-700 focus-visible:ring-slate-900 rounded-md bg-transparent";
+
+  const buttonClassNames =
+    variant === "page"
+      ? "w-full h-10 bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 font-medium"
+      : "w-full h-12 bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-slate-200 rounded-md";
+
+  return (
+    <div className="flex-1 flex flex-col justify-center">
+      {!sentEmail ? (
+        <form onSubmit={handleSendCode} className="space-y-4">
+          <Input
+            type="email"
+            placeholder="name@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={isLoading}
+            required
+            className={inputClassNames}
+          />
+          <Button
+            type="submit"
+            className={buttonClassNames}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                {variant === "page" ? (
+                  <>
+                    Continue
+                    <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                  </>
+                ) : (
+                  <>
+                    <ChevronRight /> Sign In with Email
+                  </>
+                )}
+              </>
+            )}
+          </Button>
+        </form>
+      ) : (
+        <form
+          onSubmit={handleVerify}
+          className={cn(
+            "space-y-4",
+            variant === "landing" && "animate-in fade-in slide-in-from-right-4",
+          )}
+        >
+          <div className="space-y-2">
+            <div
+              className={cn(
+                "flex justify-between items-baseline",
+                variant === "page" ? "text-xs text-slate-500 mb-2" : "",
+              )}
+            >
+              {variant === "page" ? (
+                <>
+                  Code sent to{" "}
+                  <span className="font-medium text-slate-700">
+                    {sentEmail}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <label className="text-sm font-medium dark:text-slate-200">
+                    Magic Code
+                  </label>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setSentEmail("")}
+                className={cn(
+                  "text-xs",
+                  variant === "page"
+                    ? "text-slate-400 hover:text-slate-600 transition-colors mt-2"
+                    : "text-slate-400 hover:text-slate-900 dark:hover:text-white",
+                )}
+              >
+                {variant === "page" ? "Use a different email" : "Change email"}
+              </button>
+            </div>
+            <Input
+              type="text"
+              placeholder="123456"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              disabled={isLoading}
+              required
+              className={cn(
+                "text-center tracking-widest font-mono shadow-sm",
+                variant === "page"
+                  ? "h-10 bg-white"
+                  : "h-12 border-slate-300 dark:border-zinc-700 text-lg rounded-md",
+              )}
+              autoFocus
+            />
+            {variant === "landing" && (
+              <p className="text-xs text-slate-500">Sent to {sentEmail}</p>
+            )}
+          </div>
+          <Button
+            type="submit"
+            className={cn(
+              "w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-medium",
+              variant === "page" ? "h-10" : "",
+            )}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Loader2 className="animate-spin h-4 w-4" />
+            ) : (
+              "Verify Access"
+            )}
+          </Button>
+          {variant === "page" && (
+            <button
+              type="button"
+              className="text-xs text-slate-400 hover:text-slate-600 transition-colors mt-2"
+              onClick={() => setSentEmail("")}
+            >
+              Use a different email
+            </button>
+          )}
+        </form>
+      )}
+    </div>
+  );
+}
 // components/WidgetRenderer.tsx
 "use client";
 
@@ -2005,8 +1969,8 @@ export function Sidebar({ user }: { user: any }) {
 import { usePathname } from "next/navigation";
 import { db } from "@/lib/instant";
 import AuthPage from "@/app/auth/page";
-import { Sidebar } from "@/components/Sidebar";
 import { Loader2 } from "lucide-react";
+import { AppShell } from "@/components/app-shell"; // Import the new AppShell
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isLoading, user, error } = db.useAuth();
@@ -2014,9 +1978,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // 1. Allow public access to landing page
   if (pathname === "/") {
-    // If we have a user on the landing page, we might want to still render the
-    // Landing Page but with a "Go to Dashboard" button, or just render it as is.
-    // The prompt implies the landing page IS the auth page, so we render children.
+    // The landing page handles its own layout and auth integration now.
+    // It should effectively act as the "unauthenticated" view for the root path.
     return <>{children}</>;
   }
 
@@ -2040,12 +2003,169 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // 5. Authenticated state -> Show App Shell
+  return <AppShell user={user}>{children}</AppShell>;
+}
+// components/page-header.tsx
+// components/page-header.tsx
+import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Container } from "@/lib/schemas";
+import { cn } from "@/lib/utils";
+
+interface PageHeaderProps {
+  containers: Container[];
+  activeTab: string;
+  setActiveTab: (tabId: string) => void;
+  conversationTitle?: string;
+  showMessagesTab?: boolean;
+}
+
+export function PageHeader({
+  containers,
+  activeTab,
+  setActiveTab,
+  conversationTitle,
+  showMessagesTab = true,
+}: PageHeaderProps) {
+  return (
+    <div className="border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-black px-4 h-14 flex items-center shrink-0 justify-between z-20">
+      <TabsList className="bg-transparent h-auto p-0 gap-6">
+        {showMessagesTab && (
+          <TabsTrigger
+            value="messages"
+            className={cn(
+              "data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer",
+            )}
+          >
+            Messages
+          </TabsTrigger>
+        )}
+        {containers.map((c) => (
+          <TabsTrigger
+            key={c.id}
+            value={c.id}
+            className={cn(
+              "data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-black dark:data-[state=active]:text-white border-b-2 border-transparent data-[state=active]:border-black dark:data-[state=active]:border-white px-2 py-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-all font-medium text-sm rounded-none cursor-pointer",
+            )}
+          >
+            {c.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+
+      {conversationTitle && (
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="outline"
+            className="font-normal text-slate-500 border-slate-200 dark:border-zinc-800 uppercase text-xs font-mono px-4 py-1 rounded-md"
+          >
+            {conversationTitle}
+          </Badge>
+        </div>
+      )}
+    </div>
+  );
+}
+// components/app-shell.tsx
+// components/app-shell.tsx
+import { Sidebar } from "@/components/Sidebar";
+
+export function AppShell({
+  children,
+  user,
+}: {
+  children: React.ReactNode;
+  user: any;
+}) {
   return (
     <div className="flex h-screen w-full overflow-hidden">
       <Sidebar user={user} />
       <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-white dark:bg-zinc-950">
         {children}
       </main>
+    </div>
+  );
+}
+// components/chat-input.tsx
+// components/chat-input.tsx
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Loader2, ArrowRight, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import React, { useRef } from "react";
+
+interface ChatInputProps {
+  input: string;
+  setInput: (value: string) => void;
+  onSubmit: (e?: React.FormEvent) => void;
+  isLoading: boolean;
+  placeholder?: string;
+  buttonIcon?: "arrow" | "chevron";
+  hasStarted?: boolean; // For landing page specific styling
+}
+
+export function ChatInput({
+  input,
+  setInput,
+  onSubmit,
+  isLoading,
+  placeholder = "Describe an interface to build...",
+  buttonIcon = "arrow",
+  hasStarted = true, // Default to started for conversation pages
+}: ChatInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (!hasStarted) {
+      inputRef.current?.focus();
+    }
+  }, [hasStarted]);
+
+  return (
+    <div className="relative group">
+      <div
+        className={cn(
+          "absolute inset-0 bg-gradient-to-r from-slate-200 to-slate-300 dark:from-slate-800 dark:to-slate-900 rounded-lg blur opacity-20 transition-opacity",
+          hasStarted ? "group-hover:opacity-30" : "opacity-40",
+        )}
+      />
+      <form
+        onSubmit={onSubmit}
+        className={cn(
+          "relative bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-lg shadow-xl flex items-center gap-2 pl-4 transition-all",
+          hasStarted ? "p-1.5" : "p-3",
+        )}
+      >
+        <Input
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={placeholder}
+          className={cn(
+            "flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent font-mono text-sm placeholder:text-slate-400",
+            hasStarted ? "h-10" : "h-12 text-base",
+          )}
+          disabled={isLoading}
+          autoFocus={!hasStarted}
+        />
+        <Button
+          size={hasStarted ? "sm" : "default"}
+          type="submit"
+          disabled={!input.trim() || isLoading}
+          className={cn(
+            "rounded-lg bg-slate-900 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-slate-200 transition-all cursor-pointer disabled:opacity-0 transition-opacity",
+            hasStarted ? "h-9 w-9 p-0" : "h-10 px-6",
+          )}
+        >
+          {isLoading ? (
+            <Loader2 className="h-6 w-6 animate-spin" />
+          ) : buttonIcon === "arrow" ? (
+            <ArrowRight className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-6 w-6" />
+          )}
+        </Button>
+      </form>
     </div>
   );
 }

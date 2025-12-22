@@ -2,7 +2,7 @@ import { openai } from "@ai-sdk/openai";
 import { streamObject } from "ai";
 import { ChatResponseSchema } from "@/lib/schemas";
 
-export const maxDuration = 60;
+export const maxDuration = 240;
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
